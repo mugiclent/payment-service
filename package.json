@@ -1,0 +1,42 @@
+{
+  "name": "katisha-payment-service",
+  "version": "0.1.0",
+  "description": "Payment processing service for the Katisha platform",
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "db:deploy": "prisma migrate deploy",
+    "db:migrate": "prisma migrate dev",
+    "db:generate": "prisma generate"
+  },
+  "dependencies": {
+    "@codenotary/immudb-node": "^3.0.3",
+    "@fastify/formbody": "^7.4.0",
+    "@prisma/adapter-pg": "^7.5.0",
+    "@prisma/client": "^7.8.0",
+    "amqplib": "^0.10.5",
+    "bullmq": "^5.51.0",
+    "dotenv": "^17.3.1",
+    "fastify": "^4.29.0",
+    "ioredis": "^5.4.2",
+    "undici": "^7.10.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.5",
+    "@types/node": "^22.13.13",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.26.1",
+    "@typescript-eslint/parser": "^8.26.1",
+    "eslint": "^9.22.0",
+    "globals": "^17.4.0",
+    "prisma": "^7.8.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model WalletBalance {
+  id        String    @id @default(uuid())
+  ownerId   String
+  ownerType OwnerType
+  balance   BigInt    @default(0) @db.BigInt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([ownerId, ownerType])
+}
+
+model Transaction {
+  id         String          @id @default(uuid())
+  paymentRef String          @unique
+  userId     String?
+  phone      String?
+  type       TransactionType
+  method     PaymentMethod
+  amount     BigInt          @db.BigInt
+  currency   String          @default("RWF")
+  status     PaymentStatus
+  provider   String?
+  gatewayRef String?
+  ticketId   String?
+  tripId     String?
+  orgId      String?
+  metadata   Json?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+model WalletLedger {
+  id            String          @id @default(uuid())
+  ownerId       String
+  transactionId String
+  type          LedgerEntryType
+  amount        BigInt          @db.BigInt
+  balanceBefore BigInt          @db.BigInt
+  balanceAfter  BigInt          @db.BigInt
+  description   String
+  createdAt     DateTime        @default(now())
+}
+
+model OutboxEntry {
+  id            String    @id @default(uuid())
+  eventType     String
+  paymentRef    String
+  payload       Json
+  createdAt     DateTime  @default(now())
+  processedAt   DateTime?
+  attempts      Int       @default(0)
+  lastAttemptAt DateTime?
+  error         String?
+}
+
+enum OwnerType       { PASSENGER ORGANISATION }
+enum TransactionType { TICKET_PAYMENT WALLET_TOPUP REFUND }
+enum PaymentMethod   { wallet mtn airtel cash }
+enum PaymentStatus   { PENDING CONFIRMED FAILED REFUNDED }
+enum LedgerEntryType { CREDIT DEBIT }
