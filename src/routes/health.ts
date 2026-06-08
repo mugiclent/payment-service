@@ -30,7 +30,7 @@ async function checkRedisHealth(): Promise<{ ok: boolean; error?: string }> {
 async function checkImmuDBHealth(): Promise<{ ok: boolean; error?: string }> {
   try {
     const db = getImmuDB();
-    await db.query('SELECT * FROM payment_events LIMIT 1');
+    await db.sqlQuery({ sql: 'SELECT * FROM payment_events LIMIT 1' });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };

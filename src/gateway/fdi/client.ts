@@ -48,7 +48,7 @@ export async function fdiPull(params: {
   msisdn: string;
   amount: bigint;
 }): Promise<FdiProcessingResponse> {
-  return fdiRequest<FdiProcessingResponse>('POST', '/rw/v3/momo/pull', {
+  return fdiRequest<FdiProcessingResponse>('POST', '/momo/pull', {
     trxRef:    params.trxRef,
     channelId: params.channelId,
     walletId:  config.fdi.walletId,
@@ -64,7 +64,7 @@ export async function fdiPush(params: {
   msisdn: string;
   amount: bigint;
 }): Promise<FdiProcessingResponse> {
-  return fdiRequest<FdiProcessingResponse>('POST', '/rw/v3/momo/push', {
+  return fdiRequest<FdiProcessingResponse>('POST', '/momo/push', {
     trxRef:    params.trxRef,
     channelId: params.channelId,
     walletId:  config.fdi.walletId,
@@ -79,7 +79,7 @@ export async function fdiRefund(params: {
   msisdn: string;
   amount: bigint;
 }): Promise<FdiRefundResponse> {
-  return fdiRequest<FdiRefundResponse>('POST', '/rw/v3/momo/refund', {
+  return fdiRequest<FdiRefundResponse>('POST', '/momo/refund', {
     trxID:    params.trxID,
     msisdn:   params.msisdn,
     amount:   Number(params.amount),
@@ -88,9 +88,9 @@ export async function fdiRefund(params: {
 }
 
 export async function fdiGetTransactionInfo(trxRef: string): Promise<FdiTransactionResponse> {
-  return fdiRequest<FdiTransactionResponse>('GET', `/rw/v3/momo/${trxRef}/info`);
+  return fdiRequest<FdiTransactionResponse>('GET', `/momo/${trxRef}/info`);
 }
 
 export async function fdiGetChannels(): Promise<FdiChannelsResponse> {
-  return fdiRequest<FdiChannelsResponse>('GET', '/rw/v3/channels');
+  return fdiRequest<FdiChannelsResponse>('GET', '/channels');
 }

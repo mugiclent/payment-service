@@ -3,7 +3,7 @@ import { getImmuDB } from './client.js';
 export async function initImmuDBSchema(): Promise<void> {
   const db = getImmuDB();
 
-  await db.exec(`
+  await db.sqlExec({ sql: `
     CREATE TABLE IF NOT EXISTS payment_events (
       id          VARCHAR(36)   NOT NULL,
       event_type  VARCHAR(50)   NOT NULL,
@@ -22,16 +22,16 @@ export async function initImmuDBSchema(): Promise<void> {
       metadata    VARCHAR(1000),
       PRIMARY KEY (id)
     )
-  `);
+  ` });
 
   try {
-    await db.exec('CREATE INDEX ON payment_events(payment_ref)');
+    await db.sqlExec({ sql: 'CREATE INDEX ON payment_events(payment_ref)' });
   } catch (e) {
     if (!(e as Error).message.includes('already exists')) throw e;
   }
 
   try {
-    await db.exec('CREATE INDEX ON payment_events(owner_id)');
+    await db.sqlExec({ sql: 'CREATE INDEX ON payment_events(owner_id)' });
   } catch (e) {
     if (!(e as Error).message.includes('already exists')) throw e;
   }

@@ -30,7 +30,7 @@ export function validateEnv(): void {
 }
 
 export const config = {
-  port: parseInt(optional('PAYMENT_SERVICE_PORT', '3003'), 10),
+  port: parseInt(optional('PAYMENT_SERVICE_PORT', '8092'), 10),
 
   db: {
     url: require('DATABASE_URL'),

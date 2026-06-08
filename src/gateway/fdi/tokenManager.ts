@@ -19,7 +19,7 @@ export class FdiTokenManager {
   }
 
   private async fetchAndCache(): Promise<string> {
-    const res = await fetch(`${config.fdi.baseUrl}/rw/v3/auth`, {
+    const res = await fetch(`${config.fdi.baseUrl}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ appId: config.fdi.appId, secret: config.fdi.secret }),

@@ -61,8 +61,32 @@ model OutboxEntry {
   error         String?
 }
 
-enum OwnerType       { PASSENGER ORGANISATION }
-enum TransactionType { TICKET_PAYMENT WALLET_TOPUP REFUND }
-enum PaymentMethod   { wallet mtn airtel cash }
-enum PaymentStatus   { PENDING CONFIRMED FAILED REFUNDED }
-enum LedgerEntryType { CREDIT DEBIT }
+enum OwnerType {
+  PASSENGER
+  ORGANISATION
+}
+
+enum TransactionType {
+  TICKET_PAYMENT
+  WALLET_TOPUP
+  REFUND
+}
+
+enum PaymentMethod {
+  wallet
+  mtn
+  airtel
+  cash
+}
+
+enum PaymentStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
+}
+
+enum LedgerEntryType {
+  CREDIT
+  DEBIT
+}
