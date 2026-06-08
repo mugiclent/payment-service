@@ -7,7 +7,8 @@ import { handleWalletRefund } from '../handlers/walletRefund.js';
 import { handleMomoRefund } from '../handlers/momoRefund.js';
 import { createWallet } from '../wallet/creation.js';
 
-const DLX = 'payment.dlx';
+const TRIPS_DLX = 'payment.dlx';
+const USERS_DLX  = 'users.dlx';
 
 let isShuttingDown        = false;
 let isReconnecting        = false;
@@ -30,25 +31,25 @@ function parse(content: Buffer): unknown {
 async function setupConsumerChannels(): Promise<void> {
   const conn = getConnection();
 
-  // ── payment.requested ───────────────────────────────────────────────────────
-  const requestCh: Channel = await conn.createChannel();
-  await requestCh.prefetch(1);
-  await requestCh.checkExchange('payment');
-  await requestCh.checkExchange(DLX);
+  // ── trips-payment-svc ────────────────────────────────────────────────────
+  // Consumes payment.requested and refund.requested from the trips exchange.
+  // trips is owned by trip-service (not broker-predefined) so we assertExchange.
+  const tripsCh: Channel = await conn.createChannel();
+  await tripsCh.prefetch(1);
+  await tripsCh.assertExchange('trips', 'topic', { durable: true });
+  await tripsCh.checkExchange(TRIPS_DLX);
 
-  await requestCh.assertQueue('payment-svc.requests', {
+  await tripsCh.assertQueue('trips-payment-svc', {
     durable: true,
-    arguments: {
-      'x-dead-letter-exchange': DLX,
-      'x-message-ttl':         180_000,
-    },
+    arguments: { 'x-dead-letter-exchange': TRIPS_DLX },
   });
-  await requestCh.bindQueue('payment-svc.requests', 'payment', 'payment.requested');
+  await tripsCh.bindQueue('trips-payment-svc', 'trips', 'payment.requested');
+  await tripsCh.bindQueue('trips-payment-svc', 'trips', 'refund.requested');
 
-  requestCh.on('error', (err: Error) =>
-    console.warn('[rabbitmq] requestCh error:', err.message),
+  tripsCh.on('error', (err: Error) =>
+    console.warn('[rabbitmq] tripsCh error:', err.message),
   );
-  requestCh.on('close', () => {
+  tripsCh.on('close', () => {
     if (isShuttingDown || isReconnecting || isReconnectingChannel) return;
     isReconnectingChannel = true;
     setTimeout(() => {
@@ -58,127 +59,101 @@ async function setupConsumerChannels(): Promise<void> {
     }, RETRY_DELAY_MS);
   });
 
-  await requestCh.consume('payment-svc.requests', async (msg) => {
+  await tripsCh.consume('trips-payment-svc', async (msg) => {
     if (!msg) return;
     try {
       const payload = parse(msg.content) as Record<string, unknown>;
-      const method  = payload['method'] as string;
+      const type    = payload['type'] as string;
 
-      if (method === 'wallet') {
-        await handleWalletPayment({
-          paymentRef: String(payload['paymentRef']),
-          userId:     String(payload['userId']),
-          amount:     bigintFromMsg(payload['amount']),
-          currency:   String(payload['currency'] ?? 'RWF'),
-          ticketId:   payload['ticketId'] as string | null,
-          tripId:     payload['tripId']   as string | null,
-          orgId:      payload['orgId']    as string | null,
-        });
-      } else if (method === 'mtn' || method === 'airtel') {
-        await handleMomoPayment({
-          paymentRef: String(payload['paymentRef']),
-          method,
-          phone:      String(payload['phone']),
-          amount:     bigintFromMsg(payload['amount']),
-          currency:   String(payload['currency'] ?? 'RWF'),
-          userId:     payload['userId']   as string | null,
-          ticketId:   payload['ticketId'] as string | null,
-          tripId:     payload['tripId']   as string | null,
-          orgId:      payload['orgId']    as string | null,
-        });
-      } else if (method === 'cash') {
-        await handleCashPayment({
-          paymentRef: String(payload['paymentRef']),
-          orgId:      String(payload['orgId']),
-          amount:     bigintFromMsg(payload['amount']),
-          currency:   String(payload['currency'] ?? 'RWF'),
-          userId:     payload['userId']   as string | null,
-          ticketId:   payload['ticketId'] as string | null,
-          tripId:     payload['tripId']   as string | null,
-        });
+      if (type === 'payment.requested') {
+        const method = payload['payment_method'] as string;
+        if (method === 'wallet') {
+          await handleWalletPayment({
+            paymentRef: String(payload['payment_ref']),
+            userId:     String(payload['user_id']),
+            amount:     bigintFromMsg(payload['ticket_price']),
+            currency:   'RWF',
+            ticketId:   payload['ticket_id'] as string | null,
+            tripId:     payload['trip_id']   as string | null,
+            orgId:      payload['org_id']    as string | null,
+          });
+        } else if (method === 'mtn' || method === 'airtel') {
+          await handleMomoPayment({
+            paymentRef: String(payload['payment_ref']),
+            method,
+            phone:      String(payload['phone']),
+            amount:     bigintFromMsg(payload['ticket_price']),
+            currency:   'RWF',
+            userId:     payload['user_id']   as string | null,
+            ticketId:   payload['ticket_id'] as string | null,
+            tripId:     payload['trip_id']   as string | null,
+            orgId:      payload['org_id']    as string | null,
+          });
+        } else if (method === 'cash') {
+          await handleCashPayment({
+            paymentRef: String(payload['payment_ref']),
+            orgId:      String(payload['org_id']),
+            amount:     bigintFromMsg(payload['ticket_price']),
+            currency:   'RWF',
+            userId:     payload['user_id']   as string | null,
+            ticketId:   payload['ticket_id'] as string | null,
+            tripId:     payload['trip_id']   as string | null,
+          });
+        } else {
+          console.warn('[consumer] Unknown payment method:', method);
+        }
+
+      } else if (type === 'refund.requested') {
+        const originalMethod = payload['payment_method'] as string;
+        if (originalMethod === 'wallet') {
+          await handleWalletRefund({
+            paymentRef:         String(payload['payment_ref']),
+            originalPaymentRef: String(payload['original_payment_ref']),
+            userId:             String(payload['user_id']),
+            amount:             bigintFromMsg(payload['ticket_price']),
+            currency:           'RWF',
+            ticketId:           payload['ticket_id'] as string | null,
+            reason:             payload['reason'] as string | undefined,
+          });
+        } else {
+          await handleMomoRefund({
+            paymentRef:         String(payload['payment_ref']),
+            originalPaymentRef: String(payload['original_payment_ref']),
+            phone:              String(payload['phone']),
+            userId:             payload['user_id'] as string | null,
+            amount:             bigintFromMsg(payload['ticket_price']),
+            currency:           'RWF',
+            ticketId:           payload['ticket_id'] as string | null,
+            reason:             payload['reason'] as string | undefined,
+          });
+        }
+
       } else {
-        console.warn('[consumer] Unknown payment method:', method);
+        // Unknown type on this queue — ack and discard
+        console.warn('[consumer] trips-payment-svc: ignoring unknown type:', type);
       }
 
-      try { requestCh.ack(msg); } catch { /* channel closed */ }
+      try { tripsCh.ack(msg); } catch { /* channel closed */ }
     } catch (err) {
-      console.error('[consumer] payment.requested failed:', (err as Error).message);
-      try { requestCh.nack(msg, false, false); } catch { /* channel closed */ }
+      console.error('[consumer] trips-payment-svc failed:', (err as Error).message);
+      try { tripsCh.nack(msg, false, false); } catch { /* channel closed */ }
     }
   });
 
-  // ── refund.requested ────────────────────────────────────────────────────────
-  const refundCh: Channel = await conn.createChannel();
-  await refundCh.prefetch(1);
-  await refundCh.checkExchange('payment');
-
-  await refundCh.assertQueue('payment-svc.refunds', {
-    durable: true,
-    arguments: { 'x-dead-letter-exchange': DLX },
-  });
-  await refundCh.bindQueue('payment-svc.refunds', 'payment', 'refund.requested');
-
-  refundCh.on('error', (err: Error) =>
-    console.warn('[rabbitmq] refundCh error:', err.message),
-  );
-  refundCh.on('close', () => {
-    if (isShuttingDown || isReconnecting || isReconnectingChannel) return;
-    isReconnectingChannel = true;
-    setTimeout(() => {
-      void setupConsumerChannels()
-        .catch((e: Error) => console.warn('[rabbitmq] Failed to re-create consumer channels:', e.message))
-        .finally(() => { isReconnectingChannel = false; });
-    }, RETRY_DELAY_MS);
-  });
-
-  await refundCh.consume('payment-svc.refunds', async (msg) => {
-    if (!msg) return;
-    try {
-      const payload = parse(msg.content) as Record<string, unknown>;
-
-      // Determine refund type from original transaction
-      const originalMethod = payload['originalMethod'] as string | undefined;
-
-      if (originalMethod === 'wallet') {
-        await handleWalletRefund({
-          paymentRef:         String(payload['paymentRef']),
-          originalPaymentRef: String(payload['originalPaymentRef']),
-          userId:             String(payload['userId']),
-          amount:             bigintFromMsg(payload['amount']),
-          currency:           String(payload['currency'] ?? 'RWF'),
-          ticketId:           payload['ticketId'] as string | null,
-          reason:             payload['reason'] as string | undefined,
-        });
-      } else {
-        await handleMomoRefund({
-          paymentRef:         String(payload['paymentRef']),
-          originalPaymentRef: String(payload['originalPaymentRef']),
-          phone:              String(payload['phone']),
-          userId:             payload['userId'] as string | null,
-          amount:             bigintFromMsg(payload['amount']),
-          currency:           String(payload['currency'] ?? 'RWF'),
-          ticketId:           payload['ticketId'] as string | null,
-          reason:             payload['reason'] as string | undefined,
-        });
-      }
-
-      try { refundCh.ack(msg); } catch { /* channel closed */ }
-    } catch (err) {
-      console.error('[consumer] refund.requested failed:', (err as Error).message);
-      try { refundCh.nack(msg, false, false); } catch { /* channel closed */ }
-    }
-  });
-
-  // ── user.passenger.created ───────────────────────────────────────────────────
+  // ── users-payment-svc ────────────────────────────────────────────────────
+  // Consumes user.passenger.created and org.activated from the users exchange.
+  // users is broker-predefined (definitions.json) so we checkExchange.
   const usersCh: Channel = await conn.createChannel();
   await usersCh.prefetch(1);
   await usersCh.checkExchange('users');
+  await usersCh.checkExchange('users.dlx');
 
   await usersCh.assertQueue('users-payment-svc', {
     durable: true,
-    arguments: { 'x-dead-letter-exchange': DLX },
+    arguments: { 'x-dead-letter-exchange': 'users.dlx' },
   });
   await usersCh.bindQueue('users-payment-svc', 'users', 'user.passenger.created');
+  await usersCh.bindQueue('users-payment-svc', 'users', 'org.activated');
 
   usersCh.on('error', (err: Error) =>
     console.warn('[rabbitmq] usersCh error:', err.message),
@@ -197,47 +172,20 @@ async function setupConsumerChannels(): Promise<void> {
     if (!msg) return;
     try {
       const payload = parse(msg.content) as Record<string, unknown>;
-      await createWallet(String(payload['userId']), 'PASSENGER');
+      const type    = payload['type'] as string;
+
+      if (type === 'user.passenger.created') {
+        await createWallet(String(payload['userId']), 'PASSENGER');
+      } else if (type === 'org.activated') {
+        await createWallet(String(payload['orgId']), 'ORGANISATION');
+      } else {
+        console.warn('[consumer] users-payment-svc: ignoring unknown type:', type);
+      }
+
       try { usersCh.ack(msg); } catch { /* channel closed */ }
     } catch (err) {
-      console.error('[consumer] user.passenger.created failed:', (err as Error).message);
+      console.error('[consumer] users-payment-svc failed:', (err as Error).message);
       try { usersCh.nack(msg, false, false); } catch { /* channel closed */ }
-    }
-  });
-
-  // ── org.activated ─────────────────────────────────────────────────────────
-  const billingCh: Channel = await conn.createChannel();
-  await billingCh.prefetch(1);
-  await billingCh.checkExchange('billing');
-
-  await billingCh.assertQueue('billing-payment-svc', {
-    durable: true,
-    arguments: { 'x-dead-letter-exchange': DLX },
-  });
-  await billingCh.bindQueue('billing-payment-svc', 'billing', 'org.activated');
-
-  billingCh.on('error', (err: Error) =>
-    console.warn('[rabbitmq] billingCh error:', err.message),
-  );
-  billingCh.on('close', () => {
-    if (isShuttingDown || isReconnecting || isReconnectingChannel) return;
-    isReconnectingChannel = true;
-    setTimeout(() => {
-      void setupConsumerChannels()
-        .catch((e: Error) => console.warn('[rabbitmq] Failed to re-create consumer channels:', e.message))
-        .finally(() => { isReconnectingChannel = false; });
-    }, RETRY_DELAY_MS);
-  });
-
-  await billingCh.consume('billing-payment-svc', async (msg) => {
-    if (!msg) return;
-    try {
-      const payload = parse(msg.content) as Record<string, unknown>;
-      await createWallet(String(payload['orgId']), 'ORGANISATION');
-      try { billingCh.ack(msg); } catch { /* channel closed */ }
-    } catch (err) {
-      console.error('[consumer] org.activated failed:', (err as Error).message);
-      try { billingCh.nack(msg, false, false); } catch { /* channel closed */ }
     }
   });
 
