@@ -3,6 +3,7 @@ import { prisma } from '../db/prisma.js';
 import { getBalance } from '../wallet/balance.js';
 import { handleWalletTopup } from '../handlers/walletTopup.js';
 import { handleOperatorPayout } from '../handlers/operatorPayout.js';
+import { v4 as uuidv4 } from 'uuid';
 
 export async function internalRoutes(app: FastifyInstance): Promise<void> {
   // GET /internal/wallet/balance/:ownerId
@@ -58,14 +59,16 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
 
   // POST /internal/topup
   app.post<{
-    Body: { topupRef: string; userId: string; phone: string; amount: string };
+    Body: { userId: string; phone: string; amount: string };
   }>(
     '/internal/topup',
     async (req, reply) => {
-      const { topupRef, userId, phone, amount } = req.body;
-      if (!topupRef || !userId || !phone || !amount) {
+      const { userId, phone, amount } = req.body;
+      if (!userId || !phone || !amount) {
         return reply.status(400).send({ error: 'Missing required fields' });
       }
+
+      const topupRef = uuidv4();
 
       try {
         await handleWalletTopup({

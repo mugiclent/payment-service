@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { getImmuDB } from './client.js';
+import Long from 'long';
 
 const POLL_INTERVAL_MS = 2_000;
 const MAX_BACKOFF_MS   = 60_000;
@@ -18,11 +19,33 @@ async function processEntry(entry: {
   payload: unknown;
   attempts: number;
 }): Promise<void> {
-  const db = getImmuDB();
   const p  = entry.payload as Record<string, unknown>;
 
-  await db.exec(
-    `INSERT INTO payment_events (
+  const IMMUDB_EVENT_TYPES = new Set([
+    'TOPUP_CONFIRMED',
+    'MTN_PAYMENT_CONFIRMED',
+    'AIRTEL_PAYMENT_CONFIRMED',
+    'REFUND_CONFIRMED',
+    'WALLET_DEBIT',
+    'WALLET_CREDIT',
+    'CASH_PAYMENT_RECORDED',
+    'OPERATOR_PAYOUT_PENDING',
+  ]);
+
+  if (!IMMUDB_EVENT_TYPES.has(entry.eventType)) return;
+
+  const db = getImmuDB();
+
+  const varchar = (name: string, val: unknown): { name: string; type: 'VARCHAR'; value: string } =>
+    ({ name, type: 'VARCHAR', value: String(val) });
+
+  const nullOrVarchar = (name: string, val: unknown) =>
+    val != null
+      ? ({ name, type: 'VARCHAR' as const, value: String(val) })
+      : ({ name, type: 'NULL'    as const });
+
+  await db.sqlExec({
+    sql: `INSERT INTO payment_events (
        id, event_type, payment_ref, owner_id, owner_type,
        amount, currency, method, status,
        ticket_id, trip_id, org_id, gateway_ref,
@@ -33,24 +56,24 @@ async function processEntry(entry: {
        @ticket_id, @trip_id, @org_id, @gateway_ref,
        @occurred_at, @metadata
      )`,
-    {
-      id:          String(p['id']          ?? entry.id),
-      event_type:  String(p['event_type']  ?? entry.eventType),
-      payment_ref: String(p['payment_ref'] ?? entry.paymentRef),
-      owner_id:    String(p['owner_id']    ?? ''),
-      owner_type:  String(p['owner_type']  ?? ''),
-      amount:      Number(p['amount']      ?? 0),
-      currency:    String(p['currency']    ?? 'RWF'),
-      method:      p['method']      != null ? String(p['method'])      : null,
-      status:      String(p['status']      ?? ''),
-      ticket_id:   p['ticket_id']   != null ? String(p['ticket_id'])   : null,
-      trip_id:     p['trip_id']     != null ? String(p['trip_id'])     : null,
-      org_id:      p['org_id']      != null ? String(p['org_id'])      : null,
-      gateway_ref: p['gateway_ref'] != null ? String(p['gateway_ref']) : null,
-      occurred_at: String(p['occurred_at'] ?? new Date().toISOString()),
-      metadata:    p['metadata']    != null ? String(p['metadata'])    : null,
-    },
-  );
+    params: [
+      varchar('id',          p['id']          ?? entry.id),
+      varchar('event_type',  p['event_type']  ?? entry.eventType),
+      varchar('payment_ref', p['payment_ref'] ?? entry.paymentRef),
+      varchar('owner_id',    p['owner_id']    ?? ''),
+      varchar('owner_type',  p['owner_type']  ?? ''),
+      { name: 'amount', type: 'INTEGER', value: Long.fromNumber(Number(p['amount'] ?? 0)) },
+      varchar('currency',    p['currency']    ?? 'RWF'),
+      nullOrVarchar('method',      p['method']),
+      varchar('status',      p['status']      ?? ''),
+      nullOrVarchar('ticket_id',   p['ticket_id']),
+      nullOrVarchar('trip_id',     p['trip_id']),
+      nullOrVarchar('org_id',      p['org_id']),
+      nullOrVarchar('gateway_ref', p['gateway_ref']),
+      varchar('occurred_at', p['occurred_at'] ?? new Date().toISOString()),
+      nullOrVarchar('metadata',    p['metadata']),
+    ],
+  });
 }
 
 async function runOnce(): Promise<void> {

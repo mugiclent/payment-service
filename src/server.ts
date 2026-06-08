@@ -84,6 +84,7 @@ async function start(): Promise<void> {
   // ── Graceful shutdown ─────────────────────────────────────────────────────
   const shutdown = async (): Promise<void> => {
     console.info('[shutdown] SIGTERM received — draining...');
+    setTimeout(() => process.exit(1), 35_000).unref();
 
     setShuttingDown();
     stopOutboxWorker();
@@ -106,7 +107,6 @@ async function start(): Promise<void> {
 
   process.once('SIGTERM', () => void shutdown());
   process.once('SIGINT',  () => void shutdown());
-  setTimeout(() => process.exit(1), 35_000).unref();
 }
 
 start().catch((err) => {

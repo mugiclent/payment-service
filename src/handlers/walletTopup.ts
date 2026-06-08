@@ -2,6 +2,7 @@ import { prisma } from '../db/prisma.js';
 import { fdiPull } from '../gateway/fdi/client.js';
 import { webhookQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
+import { inferMomoMethod, momoChannelId } from '../utils/phone.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletTopupInput {
@@ -17,6 +18,9 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
   const existing = await prisma.transaction.findUnique({ where: { paymentRef: topupRef } });
   if (existing) return { status: 202 };
 
+  const method    = inferMomoMethod(phone);
+  const channelId = momoChannelId(method, config.fdi.mtnChannelId, config.fdi.airtelChannelId);
+
   await prisma.$transaction([
     prisma.transaction.create({
       data: {
@@ -25,7 +29,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
         userId,
         phone,
         type:       'WALLET_TOPUP',
-        method:     'mtn',
+        method,
         amount,
         currency:   'RWF',
         status:     'PENDING',
@@ -45,7 +49,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
           owner_type:  'PASSENGER',
           amount:      Number(amount),
           currency:    'RWF',
-          method:      'mtn',
+          method,
           status:      'PENDING',
           ticket_id:   null,
           trip_id:     null,
@@ -59,9 +63,9 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
   ]);
 
   const fdiRes = await fdiPull({
-    trxRef:    topupRef,
-    channelId: config.fdi.mtnChannelId,
-    msisdn:    phone,
+    trxRef: topupRef,
+    channelId,
+    msisdn: phone,
     amount,
   });
 
@@ -75,7 +79,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
   await webhookQueue.add(
     'ttl-fallback',
     { paymentRef: topupRef, provider: 'fdi' },
-    { delay: 180_000, jobId: `ttl:${topupRef}` },
+    { delay: 180_000, jobId: `ttl-${topupRef}` },
   );
 
   return { status: 202 };
