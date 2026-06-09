@@ -48,7 +48,7 @@ export async function fdiPull(params: {
   msisdn: string;
   amount: bigint;
 }): Promise<FdiProcessingResponse> {
-  return fdiRequest<FdiProcessingResponse>('POST', '/momo/pull', {
+  const res = await fdiRequest<FdiProcessingResponse>('POST', '/momo/pull', {
     trxRef:    params.trxRef,
     channelId: params.channelId,
     walletId:  config.fdi.walletId,
@@ -56,6 +56,11 @@ export async function fdiPull(params: {
     amount:    Number(params.amount),
     callback:  config.fdi.callbackUrl,
   });
+  if (res.status !== 'success' || !res.data?.gwRef) {
+    const msg = (res.data as unknown as Record<string, string>)?.message ?? 'FDI pull failed';
+    throw new Error(msg);
+  }
+  return res;
 }
 
 export async function fdiPush(params: {
@@ -64,7 +69,7 @@ export async function fdiPush(params: {
   msisdn: string;
   amount: bigint;
 }): Promise<FdiProcessingResponse> {
-  return fdiRequest<FdiProcessingResponse>('POST', '/momo/push', {
+  const res = await fdiRequest<FdiProcessingResponse>('POST', '/momo/push', {
     trxRef:    params.trxRef,
     channelId: params.channelId,
     walletId:  config.fdi.walletId,
@@ -72,6 +77,11 @@ export async function fdiPush(params: {
     amount:    Number(params.amount),
     callback:  config.fdi.callbackUrl,
   });
+  if (res.status !== 'success' || !res.data?.gwRef) {
+    const msg = (res.data as unknown as Record<string, string>)?.message ?? 'FDI push failed';
+    throw new Error(msg);
+  }
+  return res;
 }
 
 export async function fdiRefund(params: {
@@ -79,12 +89,17 @@ export async function fdiRefund(params: {
   msisdn: string;
   amount: bigint;
 }): Promise<FdiRefundResponse> {
-  return fdiRequest<FdiRefundResponse>('POST', '/momo/refund', {
+  const res = await fdiRequest<FdiRefundResponse>('POST', '/momo/refund', {
     trxID:    params.trxID,
     msisdn:   params.msisdn,
     amount:   Number(params.amount),
     callback: config.fdi.callbackUrl,
   });
+  if (res.status !== 'success' || !res.data?.gwRef) {
+    const msg = (res.data as unknown as Record<string, string>)?.message ?? 'FDI refund failed';
+    throw new Error(msg);
+  }
+  return res;
 }
 
 export async function fdiGetTransactionInfo(trxRef: string): Promise<FdiTransactionResponse> {
