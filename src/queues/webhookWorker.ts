@@ -101,7 +101,7 @@ export function startWebhookWorker(): Worker {
       if (job.name === 'ttl-fallback') return;
 
       const event = job.data as PaymentWebhookEvent;
-      const { internalRef, gatewayRef, status } = event;
+      const { internalRef, gatewayRef, status, failureReason } = event;
 
       const trx = await prisma.transaction.findUnique({
         where: { paymentRef: internalRef },
@@ -184,13 +184,15 @@ export function startWebhookWorker(): Worker {
           data:  { status: 'FAILED', gatewayRef: gatewayRef ?? null },
         });
 
+        const reason = failureReason ?? 'MOMO_FAILED';
+
         if (trx.type === 'WALLET_TOPUP') {
           publishTopupFailed({
             topupId:   trx.topupId ?? internalRef,
             topupRef:  internalRef,
             userId:    trx.userId!,
             amount:    trx.amount,
-            reason:    'MOMO_FAILED',
+            reason,
             failedAt:  now,
           });
         } else {
@@ -201,7 +203,7 @@ export function startWebhookWorker(): Worker {
             userId:     trx.userId,
             phone:      trx.phone,
             ticketId:   trx.ticketId,
-            reason:     'MOMO_FAILED',
+            reason,
             failedAt:   now,
             retryable:  false,
           });

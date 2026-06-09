@@ -10,8 +10,9 @@ export function normaliseFdi(body: unknown): PaymentWebhookEvent {
   const b = body as Record<string, unknown>;
   const data = (b['data'] ?? {}) as Record<string, unknown>;
 
-  const internalRef = (data['trxRef'] ?? b['trxRef'] ?? '') as string;
-  const gatewayRef  = (data['gwRef'] ?? data['id']) as string | undefined;
+  const internalRef   = (data['trxRef'] ?? b['trxRef'] ?? '') as string;
+  const gatewayRef    = (data['gwRef'] ?? data['id']) as string | undefined;
+  const failureReason = (data['message'] ?? data['reason']) as string | undefined;
 
   // Webhook uses `state`, poll uses `trxStatus` — both lowercase
   const rawStatus = (data['state'] ?? data['trxStatus'] ?? '') as string;
@@ -24,6 +25,7 @@ export function normaliseFdi(body: unknown): PaymentWebhookEvent {
     internalRef,
     gatewayRef,
     status,
+    failureReason: status === 'FAILED' ? failureReason : undefined,
     amount,
     provider: 'fdi',
     rawPayload: body as object,
