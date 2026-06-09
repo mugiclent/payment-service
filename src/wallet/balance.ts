@@ -3,7 +3,7 @@ import { redis } from '../redis/client.js';
 import { walletKey } from '../redis/walletDeduct.js';
 import type { OwnerType } from '@prisma/client';
 
-const WALLET_TTL = 3600;
+const WALLET_TTL = () => 3600 + Math.floor(Math.random() * 300);
 
 /**
  * Returns current wallet balance. Redis is the primary source; falls back to
@@ -25,7 +25,7 @@ export async function getBalance(ownerId: string): Promise<bigint> {
 
   // Seed cache
   try {
-    await redis.set(walletKey(ownerId), wallet.balance.toString(), 'EX', WALLET_TTL);
+    await redis.set(walletKey(ownerId), wallet.balance.toString(), 'EX', WALLET_TTL());
   } catch (err) {
     console.warn('[wallet] Failed to seed Redis cache:', (err as Error).message);
   }
@@ -44,7 +44,7 @@ export async function getWalletRecord(ownerId: string): Promise<{
 
 export async function seedCache(ownerId: string, balance: bigint): Promise<void> {
   try {
-    await redis.set(walletKey(ownerId), balance.toString(), 'EX', WALLET_TTL);
+    await redis.set(walletKey(ownerId), balance.toString(), 'EX', WALLET_TTL());
   } catch (err) {
     console.warn('[wallet] Failed to seed cache:', (err as Error).message);
   }
