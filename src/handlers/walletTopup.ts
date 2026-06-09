@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { fdiPull } from '../gateway/fdi/client.js';
-import { webhookQueue } from '../queues/webhookQueue.js';
+import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { inferMomoMethod, momoChannelId } from '../utils/phone.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -22,47 +22,21 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
   const method    = inferMomoMethod(phone);
   const channelId = momoChannelId(method, config.fdi.mtnChannelId, config.fdi.airtelChannelId);
 
-  await prisma.$transaction([
-    prisma.transaction.create({
-      data: {
-        id:         uuidv4(),
-        paymentRef: topupRef,
-        topupId,
-        userId,
-        phone,
-        type:       'WALLET_TOPUP',
-        method,
-        amount,
-        currency:   'RWF',
-        status:     'PENDING',
-        provider:   'fdi',
-      },
-    }),
-    prisma.outboxEntry.create({
-      data: {
-        id:         uuidv4(),
-        eventType:  'TOPUP_REQUESTED',
-        paymentRef: topupRef,
-        payload: {
-          id:          uuidv4(),
-          event_type:  'TOPUP_REQUESTED',
-          payment_ref: topupRef,
-          owner_id:    userId,
-          owner_type:  'PASSENGER',
-          amount:      Number(amount),
-          currency:    'RWF',
-          method,
-          status:      'PENDING',
-          ticket_id:   null,
-          trip_id:     null,
-          org_id:      null,
-          gateway_ref: null,
-          occurred_at: new Date().toISOString(),
-          metadata:    null,
-        },
-      },
-    }),
-  ]);
+  await prisma.transaction.create({
+    data: {
+      id:         uuidv4(),
+      paymentRef: topupRef,
+      topupId,
+      userId,
+      phone,
+      type:       'WALLET_TOPUP',
+      method,
+      amount,
+      currency:   'RWF',
+      status:     'PENDING',
+      provider:   'fdi',
+    },
+  });
 
   const fdiRes = await fdiPull({
     trxRef: topupRef,
@@ -78,7 +52,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
     });
   }
 
-  await webhookQueue.add(
+  await ttlQueue.add(
     'ttl-fallback',
     { paymentRef: topupRef, topupId, provider: 'fdi' },
     { delay: 180_000, jobId: `ttl-${topupRef}` },

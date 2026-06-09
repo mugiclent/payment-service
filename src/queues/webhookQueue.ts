@@ -10,3 +10,12 @@ export const webhookQueue = new Queue('payment-webhooks', {
     removeOnFail:     { count: 5000 },
   },
 });
+
+export const ttlQueue = new Queue('payment-ttl', {
+  connection: redis,
+  defaultJobOptions: {
+    attempts:         1,
+    removeOnComplete: { count: 500 },
+    removeOnFail:     { count: 500 },
+  },
+});

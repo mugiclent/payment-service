@@ -1,7 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { fdiPull } from '../gateway/fdi/client.js';
 import { publishPaymentFailed } from '../rabbitmq/publisher.js';
-import { webhookQueue } from '../queues/webhookQueue.js';
+import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -23,51 +23,23 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
   if (existing) return;
 
-  const eventType = method === 'mtn' ? 'MTN_PAYMENT_REQUESTED' : 'AIRTEL_PAYMENT_REQUESTED';
-
-  await prisma.$transaction([
-    prisma.transaction.create({
-      data: {
-        id:       uuidv4(),
-        paymentRef,
-        userId,
-        phone,
-        type:     'TICKET_PAYMENT',
-        method,
-        amount,
-        currency,
-        status:   'PENDING',
-        provider: 'fdi',
-        ticketId,
-        tripId,
-        orgId,
-      },
-    }),
-    prisma.outboxEntry.create({
-      data: {
-        id:         uuidv4(),
-        eventType,
-        paymentRef,
-        payload: {
-          id:          uuidv4(),
-          event_type:  eventType,
-          payment_ref: paymentRef,
-          owner_id:    userId ?? phone,
-          owner_type:  'PASSENGER',
-          amount:      Number(amount),
-          currency,
-          method,
-          status:      'PENDING',
-          ticket_id:   ticketId ?? null,
-          trip_id:     tripId ?? null,
-          org_id:      orgId ?? null,
-          gateway_ref: null,
-          occurred_at: new Date().toISOString(),
-          metadata:    null,
-        },
-      },
-    }),
-  ]);
+  await prisma.transaction.create({
+    data: {
+      id:       uuidv4(),
+      paymentRef,
+      userId,
+      phone,
+      type:     'TICKET_PAYMENT',
+      method,
+      amount,
+      currency,
+      status:   'PENDING',
+      provider: 'fdi',
+      ticketId,
+      tripId,
+      orgId,
+    },
+  });
 
   const channelId =
     method === 'mtn' ? config.fdi.mtnChannelId : config.fdi.airtelChannelId;
@@ -83,7 +55,7 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
     }
 
     // Schedule TTL fallback — fires after 3 minutes if webhook never arrives
-    await webhookQueue.add(
+    await ttlQueue.add(
       'ttl-fallback',
       { paymentRef, provider: 'fdi' },
       { delay: 180_000, jobId: `ttl-${paymentRef}` },

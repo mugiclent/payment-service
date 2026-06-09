@@ -13,7 +13,7 @@ import type { PaymentWebhookEvent } from '../gateway/types.js';
 import { v4 as uuidv4 } from 'uuid';
 
 async function handleTopupConfirmation(
-  trx: { id: string; paymentRef: string; userId: string | null; amount: bigint; currency: string },
+  trx: { id: string; paymentRef: string; topupId: string | null; userId: string | null; amount: bigint; currency: string },
   gatewayRef?: string,
 ): Promise<void> {
   const userId = trx.userId!;
@@ -96,11 +96,6 @@ export function startWebhookWorker(): Worker {
   const worker = new Worker(
     'payment-webhooks',
     async (job) => {
-      if (job.name === 'ttl-fallback') {
-        // Handled by ttlWorker — skip here to avoid double processing
-        return;
-      }
-
       const event = job.data as PaymentWebhookEvent;
       const { internalRef, gatewayRef, status } = event;
 
@@ -120,7 +115,7 @@ export function startWebhookWorker(): Worker {
       if (status === 'SUCCESSFUL') {
         if (trx.type === 'WALLET_TOPUP') {
           await handleTopupConfirmation(
-            { id: trx.id, paymentRef: trx.paymentRef, userId: trx.userId, amount: trx.amount, currency: trx.currency },
+            { id: trx.id, paymentRef: trx.paymentRef, topupId: trx.topupId, userId: trx.userId, amount: trx.amount, currency: trx.currency },
             gatewayRef,
           );
           return;
@@ -180,41 +175,10 @@ export function startWebhookWorker(): Worker {
           });
         }
       } else {
-        const failedEventType =
-          trx.method === 'mtn'    ? 'MTN_PAYMENT_REQUESTED'    :
-          trx.method === 'airtel' ? 'AIRTEL_PAYMENT_REQUESTED' :
-                                    'REFUND_INITIATED';
-
-        await prisma.$transaction([
-          prisma.transaction.update({
-            where: { paymentRef: internalRef },
-            data:  { status: 'FAILED', gatewayRef: gatewayRef ?? null },
-          }),
-          prisma.outboxEntry.create({
-            data: {
-              id:         uuidv4(),
-              eventType:  `${failedEventType}_FAILED`,
-              paymentRef: internalRef,
-              payload: {
-                id:          uuidv4(),
-                event_type:  `${failedEventType}_FAILED`,
-                payment_ref: internalRef,
-                owner_id:    trx.userId ?? trx.phone ?? '',
-                owner_type:  'PASSENGER',
-                amount:      Number(trx.amount),
-                currency:    trx.currency,
-                method:      trx.method,
-                status:      'FAILED',
-                ticket_id:   trx.ticketId ?? null,
-                trip_id:     trx.tripId   ?? null,
-                org_id:      trx.orgId    ?? null,
-                gateway_ref: gatewayRef   ?? null,
-                occurred_at: now,
-                metadata:    null,
-              },
-            },
-          }),
-        ]);
+        await prisma.transaction.update({
+          where: { paymentRef: internalRef },
+          data:  { status: 'FAILED', gatewayRef: gatewayRef ?? null },
+        });
 
         if (trx.type === 'WALLET_TOPUP') {
           publishTopupFailed({

@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { atomicWalletDeduct } from '../redis/walletDeduct.js';
-import { seedCache } from '../wallet/balance.js';
+import { seedCache, getBalance } from '../wallet/balance.js';
 import {
   publishPaymentConfirmed,
   publishPaymentFailed,

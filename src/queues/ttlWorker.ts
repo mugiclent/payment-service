@@ -3,14 +3,12 @@ import { prisma } from '../db/prisma.js';
 import { redis } from '../redis/client.js';
 import { fdiGetTransactionInfo } from '../gateway/fdi/client.js';
 import { normaliseFdi } from '../gateway/normalisers/fdi.js';
-import { webhookQueue } from './webhookQueue.js';
+import { webhookQueue, ttlQueue } from './webhookQueue.js';
 
 export function startTtlWorker(): Worker {
   const worker = new Worker(
-    'payment-webhooks',
+    'payment-ttl',
     async (job) => {
-      if (job.name !== 'ttl-fallback') return;
-
       const { paymentRef } = job.data as { paymentRef: string; provider: string };
 
       const trx = await prisma.transaction.findUnique({ where: { paymentRef } });

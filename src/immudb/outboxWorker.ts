@@ -1,5 +1,5 @@
 import { prisma } from '../db/prisma.js';
-import { getImmuDB } from './client.js';
+import { withImmuDB } from './client.js';
 import Long from 'long';
 
 const POLL_INTERVAL_MS = 2_000;
@@ -33,8 +33,6 @@ async function processEntry(entry: {
 
   if (!IMMUDB_EVENT_TYPES.has(entry.eventType)) return;
 
-  const db = getImmuDB();
-
   const varchar = (name: string, val: unknown): { name: string; type: 'VARCHAR'; value: string } =>
     ({ name, type: 'VARCHAR', value: String(val) });
 
@@ -43,7 +41,7 @@ async function processEntry(entry: {
       ? ({ name, type: 'VARCHAR' as const, value: String(val) })
       : ({ name, type: 'NULL'    as const });
 
-  await db.sqlExec({
+  await withImmuDB((db) => db.sqlExec({
     sql: `INSERT INTO payment_events (
        id, event_type, payment_ref, owner_id, owner_type,
        amount, currency, method, status,
@@ -72,7 +70,7 @@ async function processEntry(entry: {
       varchar('occurred_at', p['occurred_at'] ?? new Date().toISOString()),
       nullOrVarchar('metadata',    p['metadata']),
     ],
-  });
+  }));
 }
 
 async function runOnce(): Promise<void> {

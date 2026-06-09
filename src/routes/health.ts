@@ -2,12 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db/prisma.js';
 import { redis } from '../redis/client.js';
 import { getRabbitMQHealth } from '../rabbitmq/client.js';
-import { getImmuDB } from '../immudb/client.js';
+import { getImmuDBHealth } from '../immudb/client.js';
 import { tokenManager } from '../gateway/fdi/tokenManager.js';
 
 let dbHealthCache: { ok: boolean; error?: string; ts: number } | null = null;
 
-async function checkDbHealth(): Promise<{ ok: boolean; error?: string }> {
+async function checkDbHealth(): Promise<{ ok: boolean; error?: string; ts: number }> {
   const now = Date.now();
   if (dbHealthCache && now - dbHealthCache.ts < 5_000) return dbHealthCache;
   try {
@@ -27,14 +27,8 @@ async function checkRedisHealth(): Promise<{ ok: boolean; error?: string }> {
   }
 }
 
-async function checkImmuDBHealth(): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const db = getImmuDB();
-    await db.sqlQuery({ sql: 'SELECT * FROM payment_events LIMIT 1' });
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: (err as Error).message };
-  }
+function checkImmuDBHealth(): { ok: boolean; error?: string } {
+  return getImmuDBHealth();
 }
 
 async function checkFdiToken(): Promise<{ ok: boolean }> {
@@ -48,10 +42,10 @@ async function checkFdiToken(): Promise<{ ok: boolean }> {
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/health', async (_req, reply) => {
-    const [db, redisHealth, immudb, fdiToken, outboxPending] = await Promise.all([
+    const immudb = checkImmuDBHealth();
+    const [db, redisHealth, fdiToken, outboxPending] = await Promise.all([
       checkDbHealth(),
       checkRedisHealth(),
-      checkImmuDBHealth(),
       checkFdiToken(),
       prisma.outboxEntry.count({ where: { processedAt: null } }).catch(() => -1),
     ]);

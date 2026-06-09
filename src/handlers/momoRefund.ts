@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { fdiRefund } from '../gateway/fdi/client.js';
-import { webhookQueue } from '../queues/webhookQueue.js';
+import { ttlQueue } from '../queues/webhookQueue.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface MomoRefundInput {
@@ -30,48 +30,22 @@ export async function handleMomoRefund(input: MomoRefundInput): Promise<void> {
     );
   }
 
-  await prisma.$transaction([
-    prisma.transaction.create({
-      data: {
-        id:         uuidv4(),
-        paymentRef,
-        userId,
-        phone,
-        type:       'REFUND',
-        method:     original.method,
-        amount,
-        currency,
-        status:     'PENDING',
-        provider:   'fdi',
-        ticketId,
-        metadata:   { originalPaymentRef, reason: reason ?? null },
-      },
-    }),
-    prisma.outboxEntry.create({
-      data: {
-        id:         uuidv4(),
-        eventType:  'REFUND_INITIATED',
-        paymentRef,
-        payload: {
-          id:          uuidv4(),
-          event_type:  'REFUND_INITIATED',
-          payment_ref: paymentRef,
-          owner_id:    userId ?? phone,
-          owner_type:  'PASSENGER',
-          amount:      Number(amount),
-          currency,
-          method:      original.method,
-          status:      'PENDING',
-          ticket_id:   ticketId ?? null,
-          trip_id:     null,
-          org_id:      null,
-          gateway_ref: original.gatewayRef ?? null,
-          occurred_at: new Date().toISOString(),
-          metadata:    JSON.stringify({ originalPaymentRef, reason }),
-        },
-      },
-    }),
-  ]);
+  await prisma.transaction.create({
+    data: {
+      id:         uuidv4(),
+      paymentRef,
+      userId,
+      phone,
+      type:       'REFUND',
+      method:     original.method,
+      amount,
+      currency,
+      status:     'PENDING',
+      provider:   'fdi',
+      ticketId,
+      metadata:   { originalPaymentRef, reason: reason ?? null },
+    },
+  });
 
   const fdiRes = await fdiRefund({
     trxID:  original.gatewayRef!,
@@ -86,7 +60,7 @@ export async function handleMomoRefund(input: MomoRefundInput): Promise<void> {
     });
   }
 
-  await webhookQueue.add(
+  await ttlQueue.add(
     'ttl-fallback',
     { paymentRef, provider: 'fdi' },
     { delay: 180_000, jobId: `ttl-${paymentRef}` },
