@@ -74,7 +74,7 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
           org_id:      null,
           gateway_ref: null,
           occurred_at: now,
-          metadata:    JSON.stringify({ originalPaymentRef, reason }),
+          metadata:    JSON.stringify({ type: 'refund', ref: paymentRef, original_ref: originalPaymentRef, reason: reason ?? null }),
         },
       },
     }),

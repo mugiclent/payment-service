@@ -6,6 +6,7 @@ import { handleCashPayment } from '../handlers/cashPayment.js';
 import { handleWalletRefund } from '../handlers/walletRefund.js';
 import { handleMomoRefund } from '../handlers/momoRefund.js';
 import { createWallet } from '../wallet/creation.js';
+import { handleWalletTopup } from '../handlers/walletTopup.js';
 
 const TRIPS_DLX = 'payment.dlx';
 const USERS_DLX  = 'users.dlx';
@@ -154,6 +155,7 @@ async function setupConsumerChannels(): Promise<void> {
   });
   await usersCh.bindQueue('users-payment-svc', 'users', 'user.passenger.created');
   await usersCh.bindQueue('users-payment-svc', 'users', 'org.activated');
+  await usersCh.bindQueue('users-payment-svc', 'users', 'wallet.topup.requested');
 
   usersCh.on('error', (err: Error) =>
     console.warn('[rabbitmq] usersCh error:', err.message),
@@ -178,6 +180,14 @@ async function setupConsumerChannels(): Promise<void> {
         await createWallet(String(payload['userId']), 'PASSENGER');
       } else if (type === 'org.activated') {
         await createWallet(String(payload['orgId']), 'ORGANISATION');
+      } else if (type === 'wallet.topup.requested') {
+        await handleWalletTopup({
+          topupId:   String(payload['topup_id']),
+          topupRef:  String(payload['payment_ref']),
+          userId:    String(payload['user_id']),
+          phone:     String(payload['phone']),
+          amount:    BigInt(String(payload['amount'])),
+        });
       } else {
         console.warn('[consumer] users-payment-svc: ignoring unknown type:', type);
       }

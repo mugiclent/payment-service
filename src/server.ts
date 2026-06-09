@@ -45,7 +45,8 @@ async function start(): Promise<void> {
   // ── Step 9: Fetch FDI channels ────────────────────────────────────────────
   try {
     const channelsRes = await fdiGetChannels();
-    const channels = channelsRes.data.channels;
+    const channels = channelsRes.data?.channels;
+    if (!channels?.length) throw new Error('Empty or missing channels in FDI response');
     const mtnCh    = channels.find((c) => c.label.toLowerCase().includes('mtn'));
     const airtelCh = channels.find((c) => c.label.toLowerCase().includes('airtel'));
     if (mtnCh)    process.env['FDI_MTN_CHANNEL_ID']    = mtnCh.id;

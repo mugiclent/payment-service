@@ -20,6 +20,7 @@ model WalletBalance {
 model Transaction {
   id         String          @id @default(uuid())
   paymentRef String          @unique
+  topupId    String?
   userId     String?
   phone      String?
   type       TransactionType

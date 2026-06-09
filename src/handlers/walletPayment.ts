@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { atomicWalletDeduct } from '../redis/walletDeduct.js';
-import { seedCache, getBalance } from '../wallet/balance.js';
+import { seedCache } from '../wallet/balance.js';
 import {
   publishPaymentConfirmed,
   publishPaymentFailed,
@@ -51,17 +51,28 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
   }
 
   if (result === -1) {
-    publishPaymentFailed({
-      paymentRef,
-      method:    'wallet',
-      amount,
-      userId,
-      ticketId,
-      reason:    'INSUFFICIENT_BALANCE',
-      failedAt:  new Date().toISOString(),
-      retryable: false,
-    });
-    return;
+    // Redis says insufficient — but a topup may have confirmed between pre-flight
+    // and now without updating Redis. Check PostgreSQL before giving up.
+    const pgWallet = await prisma.walletBalance.findFirst({ where: { ownerId: userId } });
+    if (pgWallet && pgWallet.balance >= amount) {
+      // PostgreSQL is ahead of Redis — reseed and retry once
+      await seedCache(userId, pgWallet.balance);
+      result = await atomicWalletDeduct(userId, amount);
+    }
+
+    if (result === -1) {
+      publishPaymentFailed({
+        paymentRef,
+        method:    'wallet',
+        amount,
+        userId,
+        ticketId,
+        reason:    'INSUFFICIENT_BALANCE',
+        failedAt:  new Date().toISOString(),
+        retryable: false,
+      });
+      return;
+    }
   }
 
   const balanceBefore = BigInt(result) + amount;
@@ -120,14 +131,11 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
           org_id:      orgId ?? null,
           gateway_ref: null,
           occurred_at: now,
-          metadata:    null,
+          metadata:    JSON.stringify({ type: 'ticket_payment', ref: paymentRef, ticket_id: ticketId ?? null, trip_id: tripId ?? null, org_id: orgId ?? null }),
         },
       },
     }),
   ]);
-
-  // Redis is already updated by the Lua script — just ensure consistency
-  await seedCache(userId, balanceAfter);
 
   publishPaymentConfirmed({
     paymentRef,

@@ -33,6 +33,7 @@ export function publishPaymentFailed(data: {
 }
 
 export function publishTopupConfirmed(data: {
+  topupId: string;
   topupRef: string;
   userId: string;
   amount: bigint;
@@ -43,6 +44,7 @@ export function publishTopupConfirmed(data: {
 }
 
 export function publishTopupFailed(data: {
+  topupId: string;
   topupRef: string;
   userId: string;
   amount: bigint;

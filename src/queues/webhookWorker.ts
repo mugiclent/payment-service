@@ -51,11 +51,11 @@ async function handleTopupConfirmation(
     prisma.outboxEntry.create({
       data: {
         id:         uuidv4(),
-        eventType:  'TOPUP_CONFIRMED',
+        eventType:  'WALLET_CREDIT',
         paymentRef: trx.paymentRef,
         payload: {
           id:          uuidv4(),
-          event_type:  'TOPUP_CONFIRMED',
+          event_type:  'WALLET_CREDIT',
           payment_ref: trx.paymentRef,
           owner_id:    userId,
           owner_type:  'PASSENGER',
@@ -68,15 +68,14 @@ async function handleTopupConfirmation(
           org_id:      null,
           gateway_ref: gatewayRef ?? null,
           occurred_at: now,
-          metadata:    null,
+          metadata:    JSON.stringify({ type: 'topup', ref: trx.paymentRef, gateway_ref: gatewayRef ?? null }),
         },
       },
     }),
   ]);
 
-  await seedCache(userId, balanceAfter);
-
   publishTopupConfirmed({
+    topupId:     trx.topupId ?? trx.paymentRef,
     topupRef:    trx.paymentRef,
     userId,
     amount,
@@ -219,6 +218,7 @@ export function startWebhookWorker(): Worker {
 
         if (trx.type === 'WALLET_TOPUP') {
           publishTopupFailed({
+            topupId:   trx.topupId ?? internalRef,
             topupRef:  internalRef,
             userId:    trx.userId!,
             amount:    trx.amount,

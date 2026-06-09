@@ -6,17 +6,18 @@ import { inferMomoMethod, momoChannelId } from '../utils/phone.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletTopupInput {
+  topupId:  string;
   topupRef: string;
   userId:   string;
   phone:    string;
   amount:   bigint;
 }
 
-export async function handleWalletTopup(input: WalletTopupInput): Promise<{ status: number }> {
-  const { topupRef, userId, phone, amount } = input;
+export async function handleWalletTopup(input: WalletTopupInput): Promise<void> {
+  const { topupId, topupRef, userId, phone, amount } = input;
 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef: topupRef } });
-  if (existing) return { status: 202 };
+  if (existing) return;
 
   const method    = inferMomoMethod(phone);
   const channelId = momoChannelId(method, config.fdi.mtnChannelId, config.fdi.airtelChannelId);
@@ -26,6 +27,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
       data: {
         id:         uuidv4(),
         paymentRef: topupRef,
+        topupId,
         userId,
         phone,
         type:       'WALLET_TOPUP',
@@ -78,9 +80,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<{ stat
 
   await webhookQueue.add(
     'ttl-fallback',
-    { paymentRef: topupRef, provider: 'fdi' },
+    { paymentRef: topupRef, topupId, provider: 'fdi' },
     { delay: 180_000, jobId: `ttl-${topupRef}` },
   );
-
-  return { status: 202 };
 }

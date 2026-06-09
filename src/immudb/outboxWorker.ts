@@ -22,7 +22,6 @@ async function processEntry(entry: {
   const p  = entry.payload as Record<string, unknown>;
 
   const IMMUDB_EVENT_TYPES = new Set([
-    'TOPUP_CONFIRMED',
     'MTN_PAYMENT_CONFIRMED',
     'AIRTEL_PAYMENT_CONFIRMED',
     'REFUND_CONFIRMED',
