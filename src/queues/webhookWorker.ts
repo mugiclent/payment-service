@@ -96,6 +96,10 @@ export function startWebhookWorker(): Worker {
   const worker = new Worker(
     'payment-webhooks',
     async (job) => {
+      // Guard against stale ttl-fallback jobs left in this queue from before
+      // the payment-ttl queue split — they belong to ttlWorker, not here.
+      if (job.name === 'ttl-fallback') return;
+
       const event = job.data as PaymentWebhookEvent;
       const { internalRef, gatewayRef, status } = event;
 

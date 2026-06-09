@@ -10,6 +10,7 @@ import { tokenManager } from './gateway/fdi/tokenManager.js';
 import { fdiGetChannels } from './gateway/fdi/client.js';
 import { startWebhookWorker } from './queues/webhookWorker.js';
 import { startTtlWorker } from './queues/ttlWorker.js';
+import { ttlQueue } from './queues/webhookQueue.js';
 import { buildApp } from './app.js';
 import type { Worker } from 'bullmq';
 
@@ -62,7 +63,28 @@ async function start(): Promise<void> {
   // ── Step 10: Start OutboxWorker ───────────────────────────────────────────
   await startOutboxWorker();
 
-  // ── Step 11: Start BullMQ workers ────────────────────────────────────────
+  // ── Step 11: Recover stale PENDING transactions ───────────────────────────
+  // Any PENDING transaction older than 5 minutes was never resolved —
+  // either the TTL job was lost or the service crashed. Re-queue immediately.
+  const stale = await prisma.transaction.findMany({
+    where: {
+      status:    'PENDING',
+      createdAt: { lt: new Date(Date.now() - 5 * 60 * 1000) },
+    },
+    select: { paymentRef: true, topupId: true },
+  });
+  if (stale.length) {
+    console.warn(`[startup] Re-queuing ${stale.length} stale PENDING transaction(s)`);
+    await Promise.all(stale.map((t) =>
+      ttlQueue.add(
+        'ttl-fallback',
+        { paymentRef: t.paymentRef, topupId: t.topupId ?? undefined, provider: 'fdi' },
+        { jobId: `ttl-${t.paymentRef}` },
+      ).catch(() => undefined), // job already exists in queue — skip
+    ));
+  }
+
+  // ── Step 12: Start BullMQ workers ────────────────────────────────────────
   const webhookWorker = startWebhookWorker();
   const ttlWorker     = startTtlWorker();
 
