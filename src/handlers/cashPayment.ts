@@ -1,5 +1,5 @@
 import { prisma } from '../db/prisma.js';
-import { publishPaymentConfirmed } from '../rabbitmq/publisher.js';
+import { publishPaymentConfirmed, publishPaymentFailed } from '../rabbitmq/publisher.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CashPaymentInput {
@@ -29,7 +29,19 @@ export async function handleCashPayment(input: CashPaymentInput): Promise<void> 
         ticketId:    existing.ticketId,
         tripId:      existing.tripId,
       });
+    } else if (existing.status === 'FAILED') {
+      publishPaymentFailed({
+        paymentRef,
+        method:    'cash',
+        amount:    existing.amount,
+        userId,
+        ticketId:  existing.ticketId,
+        reason:    'PAYMENT_FAILED',
+        failedAt:  existing.updatedAt.toISOString(),
+        retryable: false,
+      });
     }
+    // PENDING — still in flight
     return;
   }
 

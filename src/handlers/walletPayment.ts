@@ -39,7 +39,19 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
         feeAmount:   existing.feeAmount,
         netAmount:   existing.feeAmount != null ? existing.amount - existing.feeAmount : null,
       });
+    } else if (existing.status === 'FAILED') {
+      publishPaymentFailed({
+        paymentRef,
+        method:    'wallet',
+        amount:    existing.amount,
+        userId,
+        ticketId:  existing.ticketId,
+        reason:    'INSUFFICIENT_BALANCE',
+        failedAt:  existing.updatedAt.toISOString(),
+        retryable: false,
+      });
     }
+    // PENDING — still in flight
     return;
   }
 

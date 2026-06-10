@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { fdiPull } from '../gateway/fdi/client.js';
-import { publishPaymentFailed } from '../rabbitmq/publisher.js';
+import { publishPaymentConfirmed, publishPaymentFailed } from '../rabbitmq/publisher.js';
 import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -21,7 +21,39 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
   const { paymentRef, method, phone, amount, currency, userId, ticketId, tripId, orgId } = input;
 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
-  if (existing) return;
+  if (existing) {
+    if (existing.status === 'CONFIRMED') {
+      publishPaymentConfirmed({
+        paymentRef,
+        method:      existing.method,
+        amount:      existing.amount,
+        currency:    existing.currency,
+        userId:      existing.userId,
+        phone:       existing.phone,
+        ticketId:    existing.ticketId,
+        tripId:      existing.tripId,
+        orgId:       existing.orgId,
+        confirmedAt: existing.updatedAt.toISOString(),
+        gatewayRef:  existing.gatewayRef,
+        feeAmount:   existing.feeAmount,
+        netAmount:   existing.feeAmount != null ? existing.amount - existing.feeAmount : null,
+      });
+    } else if (existing.status === 'FAILED') {
+      publishPaymentFailed({
+        paymentRef,
+        method:    existing.method,
+        amount:    existing.amount,
+        userId:    existing.userId,
+        phone:     existing.phone,
+        ticketId:  existing.ticketId,
+        reason:    'PAYMENT_FAILED',
+        failedAt:  existing.updatedAt.toISOString(),
+        retryable: false,
+      });
+    }
+    // PENDING — still in flight
+    return;
+  }
 
   await prisma.transaction.create({
     data: {

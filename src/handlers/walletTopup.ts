@@ -3,6 +3,7 @@ import { fdiPull } from '../gateway/fdi/client.js';
 import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { inferMomoMethod, momoChannelId } from '../utils/phone.js';
+import { publishTopupConfirmed, publishTopupFailed } from '../rabbitmq/publisher.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletTopupInput {
@@ -16,10 +17,49 @@ export interface WalletTopupInput {
 export async function handleWalletTopup(input: WalletTopupInput): Promise<void> {
   const { topupId, topupRef, userId, phone, amount } = input;
 
+  // Idempotency — re-publish the outcome event so the caller gets the result
   const existing = await prisma.transaction.findUnique({ where: { paymentRef: topupRef } });
-  if (existing) return;
+  if (existing) {
+    if (existing.status === 'CONFIRMED') {
+      const wallet = await prisma.walletBalance.findFirst({ where: { ownerId: userId } });
+      publishTopupConfirmed({
+        topupId:     existing.topupId ?? topupRef,
+        topupRef,
+        userId,
+        amount:      existing.amount,
+        newBalance:  wallet?.balance ?? BigInt(0),
+        confirmedAt: existing.updatedAt.toISOString(),
+      });
+    } else if (existing.status === 'FAILED') {
+      publishTopupFailed({
+        topupId:  existing.topupId ?? topupRef,
+        topupRef,
+        userId,
+        amount:   existing.amount,
+        reason:   'TOPUP_FAILED',
+        failedAt: existing.updatedAt.toISOString(),
+      });
+    }
+    // PENDING — still in flight, no event to send
+    return;
+  }
 
-  const method    = inferMomoMethod(phone);
+  // Validate phone network before writing anything to DB
+  let method: ReturnType<typeof inferMomoMethod>;
+  try {
+    method = inferMomoMethod(phone);
+  } catch (err) {
+    publishTopupFailed({
+      topupId,
+      topupRef,
+      userId,
+      amount,
+      reason:   (err as Error).message,
+      failedAt: new Date().toISOString(),
+    });
+    return; // bad data — ack the message, no point retrying
+  }
+
   const channelId = momoChannelId(method, config.fdi.mtnChannelId, config.fdi.airtelChannelId);
 
   await prisma.transaction.create({
@@ -38,18 +78,34 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
     },
   });
 
-  const fdiRes = await fdiPull({
-    trxRef: topupRef,
-    channelId,
-    msisdn: phone,
-    amount,
-  });
+  try {
+    const fdiRes = await fdiPull({
+      trxRef:    topupRef,
+      channelId,
+      msisdn:    phone,
+      amount,
+    });
 
-  if (fdiRes.data?.gwRef) {
+    if (fdiRes.data?.gwRef) {
+      await prisma.transaction.update({
+        where: { paymentRef: topupRef },
+        data:  { gatewayRef: fdiRes.data.gwRef },
+      });
+    }
+  } catch (err) {
     await prisma.transaction.update({
       where: { paymentRef: topupRef },
-      data:  { gatewayRef: fdiRes.data.gwRef },
+      data:  { status: 'FAILED' },
     });
+    publishTopupFailed({
+      topupId,
+      topupRef,
+      userId,
+      amount,
+      reason:   (err as Error).message,
+      failedAt: new Date().toISOString(),
+    });
+    throw err;
   }
 
   await ttlQueue.add(
