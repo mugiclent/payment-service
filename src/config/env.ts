@@ -25,13 +25,16 @@ export function validateEnv(): void {
     'FDI_SECRET',
     'FDI_WALLET_ID',
     'PAYMENT_CALLBACK_BASE_URL',
+    'PLATFORM_FEE_BASIS_POINTS',
+    'GATEWAY_FEE_BASIS_POINTS',
   ];
   for (const name of required) require(name);
 }
 
 export const config = {
   port: parseInt(optional('PAYMENT_SERVICE_PORT', '8099'), 10),
-  platformFeeBasisPoints: parseInt(optional('PLATFORM_FEE_BASIS_POINTS', '100'), 10),
+  platformFeeBasisPoints: parseInt(require('PLATFORM_FEE_BASIS_POINTS'), 10),
+  gatewayFeeBasisPoints:  parseInt(require('GATEWAY_FEE_BASIS_POINTS'),  10),
 
   db: {
     url: require('DATABASE_URL'),

@@ -4,6 +4,7 @@ import { publishPaymentConfirmed, publishPaymentFailed } from '../rabbitmq/publi
 import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { assertUuid, assertUuidIfPresent } from '../utils/validate.js';
+import { computeGatewayMarkup } from '../payments/fee.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface MomoPaymentInput {
@@ -89,7 +90,7 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
     method === 'mtn' ? config.fdi.mtnChannelId : config.fdi.airtelChannelId;
 
   try {
-    const fdiRes = await fdiPull({ trxRef: paymentRef, channelId, msisdn: phone, amount });
+    const fdiRes = await fdiPull({ trxRef: paymentRef, channelId, msisdn: phone, amount: amount + computeGatewayMarkup(amount) });
 
     if (fdiRes.data?.gwRef) {
       await prisma.transaction.update({

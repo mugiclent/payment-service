@@ -4,6 +4,7 @@ import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { inferMomoMethod, momoChannelId } from '../utils/phone.js';
 import { assertUuid } from '../utils/validate.js';
+import { computeGatewayMarkup } from '../payments/fee.js';
 import { publishTopupConfirmed, publishTopupFailed } from '../rabbitmq/publisher.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -101,7 +102,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
       trxRef:    topupRef,
       channelId,
       msisdn:    phone,
-      amount,
+      amount:    amount + computeGatewayMarkup(amount),
     });
 
     if (fdiRes.data?.gwRef) {
