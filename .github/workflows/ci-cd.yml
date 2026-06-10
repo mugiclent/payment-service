@@ -109,12 +109,24 @@ jobs:
             DB_PASSWORD=$(get_secret DB_PASSWORD)
             DIRECT_DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}"
 
-            # Remove any failed or rolled-back migration rows so migrate deploy
-            # re-applies them from scratch. Deletes 0 rows on a healthy DB.
-            # The || true makes it a no-op if _prisma_migrations doesn't exist yet.
-            docker exec db psql -U "$DB_USER" -d "$DB_NAME" \
-              -c "DELETE FROM _prisma_migrations WHERE finished_at IS NULL OR rolled_back_at IS NOT NULL;" \
-              2>/dev/null || true
+            # If _prisma_migrations exists but has no genuinely applied migrations
+            # (no row with finished_at set and rolled_back_at null), wipe it so
+            # migrate deploy can run all migrations from scratch.
+            # No-ops on a healthy DB where migrations have already succeeded.
+            docker exec db psql -U "$DB_USER" -d "$DB_NAME" -c "
+              DO \$\$
+              BEGIN
+                IF EXISTS (
+                  SELECT FROM information_schema.tables
+                  WHERE table_schema = 'public' AND table_name = '_prisma_migrations'
+                ) AND NOT EXISTS (
+                  SELECT FROM _prisma_migrations
+                  WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+                ) THEN
+                  DELETE FROM _prisma_migrations;
+                END IF;
+              END \$\$;
+            " 2>/dev/null || true
 
             docker run --rm \
               --network katisha-net \
