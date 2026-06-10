@@ -26,8 +26,12 @@ export function startTtlWorker(): Worker {
           return;
         }
 
-        // Build a synthetic event using the same normaliser as live webhooks
+        // Build a synthetic event using the same normaliser as live webhooks.
+        // FDI error responses (e.g. "Invalid trxRef") don't include trxRef —
+        // fall back to the paymentRef we already know so the webhook worker
+        // can always find and update the transaction.
         const event = normaliseFdi(infoRes);
+        if (!event.internalRef) event.internalRef = paymentRef;
         await webhookQueue.add('payment-event', event);
       } catch (err) {
         console.warn('[ttl-worker] FDI status poll failed for', paymentRef, (err as Error).message);
