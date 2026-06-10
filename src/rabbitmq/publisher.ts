@@ -14,6 +14,8 @@ export function publishPaymentConfirmed(data: {
   orgId?: string | null;
   confirmedAt: string;
   gatewayRef?: string | null;
+  feeAmount?: bigint | null;
+  netAmount?: bigint | null;
 }): void {
   publish(EXCHANGE, 'payment.confirmed', data);
 }

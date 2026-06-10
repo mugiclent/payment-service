@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { prisma } from '../db/prisma.js';
-import { redis } from '../redis/client.js';
+import { config } from '../config/env.js';
 import { fdiGetTransactionInfo } from '../gateway/fdi/client.js';
 import { normaliseFdi } from '../gateway/normalisers/fdi.js';
 import { webhookQueue, ttlQueue } from './webhookQueue.js';
@@ -33,7 +33,7 @@ export function startTtlWorker(): Worker {
         console.warn('[ttl-worker] FDI status poll failed for', paymentRef, (err as Error).message);
       }
     },
-    { connection: redis },
+    { connection: { url: config.redis.url } },
   );
 
   worker.on('failed', (job, err) => {

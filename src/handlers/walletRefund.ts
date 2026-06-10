@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { seedCache, getBalance } from '../wallet/balance.js';
 import { publishWalletTransactionCompleted } from '../rabbitmq/publisher.js';
+import { computeFee } from '../payments/fee.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletRefundInput {
@@ -19,11 +20,25 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
   if (existing) return;
 
-  const balanceBefore = await getBalance(userId);
-  const balanceAfter  = balanceBefore + amount;
+  const original = await prisma.transaction.findUnique({ where: { paymentRef: originalPaymentRef } });
+  const orgId = original?.orgId ?? null;
+
+  const feeAmount = computeFee(amount);
+  const netAmount = amount - feeAmount;
+
+  const passengerBalanceBefore = await getBalance(userId);
+  const passengerBalanceAfter  = passengerBalanceBefore + amount;
   const now = new Date().toISOString();
 
-  await prisma.$transaction([
+  // Pre-fetch org wallet balance for ledger entry
+  const orgWallet = orgId
+    ? await prisma.walletBalance.findFirst({ where: { ownerId: orgId, ownerType: 'ORGANISATION' } })
+    : null;
+  const orgBalanceBefore = orgWallet?.balance ?? BigInt(0);
+  const orgBalanceAfter  = orgBalanceBefore - netAmount;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ops: any[] = [
     prisma.transaction.create({
       data: {
         id:         uuidv4(),
@@ -35,9 +50,11 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
         currency,
         status:     'CONFIRMED',
         ticketId,
+        feeAmount,
         metadata:   { originalPaymentRef, reason: reason ?? null },
       },
     }),
+    // Passenger wallet credit (full amount back)
     prisma.walletBalance.update({
       where: { ownerId_ownerType: { ownerId: userId, ownerType: 'PASSENGER' } },
       data:  { balance: { increment: amount } },
@@ -49,11 +66,12 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
         transactionId: paymentRef,
         type:          'CREDIT',
         amount,
-        balanceBefore,
-        balanceAfter,
-        description:   `REFUND for ${originalPaymentRef}`,
+        balanceBefore: passengerBalanceBefore,
+        balanceAfter:  passengerBalanceAfter,
+        description:   `Refund for ${originalPaymentRef}`,
       },
     }),
+    // Passenger ImmuDB entry
     prisma.outboxEntry.create({
       data: {
         id:         uuidv4(),
@@ -71,20 +89,69 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
           status:      'CONFIRMED',
           ticket_id:   ticketId ?? null,
           trip_id:     null,
-          org_id:      null,
+          org_id:      orgId ?? null,
           gateway_ref: null,
           occurred_at: now,
-          metadata:    JSON.stringify({ type: 'refund', ref: paymentRef, original_ref: originalPaymentRef, reason: reason ?? null }),
+          metadata:    JSON.stringify({ type: 'refund', original_ref: originalPaymentRef, reason: reason ?? null }),
         },
       },
     }),
-  ]);
+  ];
 
-  await seedCache(userId, balanceAfter);
+  if (orgId && orgWallet) {
+    ops.push(
+      // Org wallet debit (returns the net amount it received)
+      prisma.walletBalance.update({
+        where: { ownerId_ownerType: { ownerId: orgId, ownerType: 'ORGANISATION' } },
+        data:  { balance: { decrement: netAmount } },
+      }),
+      prisma.walletLedger.create({
+        data: {
+          id:            uuidv4(),
+          ownerId:       orgId,
+          transactionId: paymentRef,
+          type:          'DEBIT',
+          amount:        netAmount,
+          balanceBefore: orgBalanceBefore,
+          balanceAfter:  orgBalanceAfter,
+          description:   `Refund reversal for ${originalPaymentRef}`,
+        },
+      }),
+      // Org ImmuDB entry
+      prisma.outboxEntry.create({
+        data: {
+          id:         uuidv4(),
+          eventType:  'WALLET_DEBIT',
+          paymentRef: `${paymentRef}-org`,
+          payload: {
+            id:          uuidv4(),
+            event_type:  'WALLET_DEBIT',
+            payment_ref: paymentRef,
+            owner_id:    orgId,
+            owner_type:  'ORGANISATION',
+            amount:      Number(netAmount),
+            currency,
+            method:      'wallet',
+            status:      'CONFIRMED',
+            ticket_id:   ticketId ?? null,
+            trip_id:     null,
+            org_id:      orgId,
+            gateway_ref: null,
+            occurred_at: now,
+            metadata:    JSON.stringify({ type: 'refund_reversal', original_ref: originalPaymentRef }),
+          },
+        },
+      }),
+    );
+  }
+
+  await prisma.$transaction(ops);
+
+  await seedCache(userId, passengerBalanceAfter);
 
   publishWalletTransactionCompleted({
     userId,
-    newBalance:  balanceAfter,
+    newBalance:  passengerBalanceAfter,
     type:        'CREDIT',
     amount,
     occurredAt:  now,

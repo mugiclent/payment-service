@@ -33,6 +33,7 @@ model Transaction {
   ticketId   String?
   tripId     String?
   orgId      String?
+  feeAmount  BigInt?         @db.BigInt
   metadata   Json?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt

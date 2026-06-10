@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { prisma } from '../db/prisma.js';
 import { getBalance } from '../wallet/balance.js';
 import { handleOperatorPayout } from '../handlers/operatorPayout.js';
+import type { Prisma } from '@prisma/client';
 
 export async function internalRoutes(app: FastifyInstance): Promise<void> {
   // GET /internal/wallet/balance/:ownerId
@@ -13,7 +14,7 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
         const balance = await getBalance(ownerId);
         return reply.send({
           ownerId,
-          balance: balance.toString(),
+          balance:  balance.toString(),
           currency: 'RWF',
         });
       } catch (err) {
@@ -22,50 +23,77 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  // GET /internal/wallet/transactions/:ownerId
+  /**
+   * GET /internal/transactions
+   *
+   * Query parameters:
+   *   paymentRef  — exact match
+   *   ownerId     — matches userId OR phone
+   *   orgId       — exact match
+   *   method      — wallet | mtn | airtel | cash
+   *   type        — TICKET_PAYMENT | WALLET_TOPUP | REFUND
+   *   status      — PENDING | CONFIRMED | FAILED | REFUNDED
+   *   from        — ISO 8601 date, inclusive (createdAt >=)
+   *   to          — ISO 8601 date, inclusive (createdAt <=)
+   *   page        — default 1
+   *   limit       — default 20, max 100
+   */
   app.get<{
-    Params: { ownerId: string };
-    Querystring: { page?: string; limit?: string };
+    Querystring: {
+      paymentRef?: string;
+      ownerId?:    string;
+      orgId?:      string;
+      method?:     string;
+      type?:       string;
+      status?:     string;
+      from?:       string;
+      to?:         string;
+      page?:       string;
+      limit?:      string;
+    };
   }>(
-    '/internal/wallet/transactions/:ownerId',
+    '/internal/transactions',
     async (req, reply) => {
-      const { ownerId } = req.params;
-      const page  = Math.max(1, parseInt(req.query.page  ?? '1',  10));
-      const limit = Math.min(100, parseInt(req.query.limit ?? '20', 10));
+      const q     = req.query;
+      const page  = Math.max(1, parseInt(q.page  ?? '1',  10));
+      const limit = Math.min(100, parseInt(q.limit ?? '20', 10));
 
-      const [entries, total] = await Promise.all([
-        prisma.walletLedger.findMany({
-          where:   { ownerId },
+      const where: Prisma.TransactionWhereInput = {};
+
+      if (q.paymentRef) where.paymentRef = q.paymentRef;
+      if (q.orgId)      where.orgId      = q.orgId;
+      if (q.method)     where.method     = q.method as Prisma.EnumPaymentMethodFilter;
+      if (q.type)       where.type       = q.type   as Prisma.EnumTransactionTypeFilter;
+      if (q.status)     where.status     = q.status as Prisma.EnumPaymentStatusFilter;
+
+      if (q.ownerId) {
+        where.OR = [{ userId: q.ownerId }, { phone: q.ownerId }];
+      }
+
+      if (q.from || q.to) {
+        where.createdAt = {};
+        if (q.from) where.createdAt.gte = new Date(q.from);
+        if (q.to)   where.createdAt.lte = new Date(q.to);
+      }
+
+      const [rows, total] = await Promise.all([
+        prisma.transaction.findMany({
+          where,
           orderBy: { createdAt: 'desc' },
           skip:    (page - 1) * limit,
           take:    limit,
         }),
-        prisma.walletLedger.count({ where: { ownerId } }),
+        prisma.transaction.count({ where }),
       ]);
 
       return reply.send({
-        data: entries.map((e) => ({
-          ...e,
-          amount:        e.amount.toString(),
-          balanceBefore: e.balanceBefore.toString(),
-          balanceAfter:  e.balanceAfter.toString(),
+        data: rows.map((t) => ({
+          ...t,
+          amount:    t.amount.toString(),
+          feeAmount: t.feeAmount?.toString() ?? null,
+          netAmount: t.feeAmount != null ? (t.amount - t.feeAmount).toString() : null,
         })),
-        meta: { page, limit, total },
-      });
-    },
-  );
-
-  // GET /internal/transactions/:paymentRef
-  app.get<{ Params: { paymentRef: string } }>(
-    '/internal/transactions/:paymentRef',
-    async (req, reply) => {
-      const trx = await prisma.transaction.findUnique({
-        where: { paymentRef: req.params.paymentRef },
-      });
-      if (!trx) return reply.status(404).send({ error: 'Transaction not found' });
-      return reply.send({
-        ...trx,
-        amount: trx.amount.toString(),
+        meta: { page, limit, total, pages: Math.ceil(total / limit) },
       });
     },
   );
@@ -73,12 +101,12 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
   // POST /internal/billing/disburse
   app.post<{
     Body: {
-      orgId: string;
-      operatorName: string;
-      bankAccount: string;
-      amount: string;
-      currency: string;
-      reference: string;
+      orgId:         string;
+      operatorName:  string;
+      bankAccount:   string;
+      amount:        string;
+      currency:      string;
+      reference:     string;
     };
   }>(
     '/internal/billing/disburse',
@@ -92,7 +120,7 @@ export async function internalRoutes(app: FastifyInstance): Promise<void> {
         orgId,
         operatorName,
         bankAccount,
-        amount: BigInt(amount),
+        amount:   BigInt(amount),
         currency,
         reference,
       });

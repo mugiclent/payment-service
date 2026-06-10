@@ -31,6 +31,7 @@ export function validateEnv(): void {
 
 export const config = {
   port: parseInt(optional('PAYMENT_SERVICE_PORT', '8099'), 10),
+  platformFeeBasisPoints: parseInt(optional('PLATFORM_FEE_BASIS_POINTS', '100'), 10),
 
   db: {
     url: require('DATABASE_URL'),

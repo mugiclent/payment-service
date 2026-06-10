@@ -1,8 +1,10 @@
 import { Queue } from 'bullmq';
-import { redis } from '../redis/client.js';
+import { config } from '../config/env.js';
+
+const connection = { url: config.redis.url };
 
 export const webhookQueue = new Queue('payment-webhooks', {
-  connection: redis,
+  connection,
   defaultJobOptions: {
     attempts:         3,
     backoff:          { type: 'exponential', delay: 2000 },
@@ -12,7 +14,7 @@ export const webhookQueue = new Queue('payment-webhooks', {
 });
 
 export const ttlQueue = new Queue('payment-ttl', {
-  connection: redis,
+  connection,
   defaultJobOptions: {
     attempts:         1,
     removeOnComplete: { count: 500 },

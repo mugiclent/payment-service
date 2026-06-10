@@ -22,12 +22,9 @@ async function processEntry(entry: {
   const p  = entry.payload as Record<string, unknown>;
 
   const IMMUDB_EVENT_TYPES = new Set([
-    'MTN_PAYMENT_CONFIRMED',
-    'AIRTEL_PAYMENT_CONFIRMED',
-    'REFUND_CONFIRMED',
-    'WALLET_DEBIT',
     'WALLET_CREDIT',
-    'CASH_PAYMENT_RECORDED',
+    'WALLET_DEBIT',
+    'PLATFORM_FEE',
     'OPERATOR_PAYOUT_PENDING',
   ]);
 

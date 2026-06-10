@@ -6,6 +6,7 @@ import {
   publishPaymentFailed,
   publishWalletTransactionCompleted,
 } from '../rabbitmq/publisher.js';
+import { computeFee } from '../payments/fee.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletPaymentInput {
@@ -35,27 +36,25 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
         ticketId:    existing.ticketId,
         tripId:      existing.tripId,
         orgId:       existing.orgId,
+        feeAmount:   existing.feeAmount,
+        netAmount:   existing.feeAmount != null ? existing.amount - existing.feeAmount : null,
       });
     }
-    return; // PENDING or FAILED — caller waits or no-ops
+    return;
   }
 
   // Attempt atomic deduction from Redis cache
   let result = await atomicWalletDeduct(userId, amount);
 
   if (result === -2) {
-    // Cache miss — load from PostgreSQL and retry once
     const balance = await getBalance(userId);
     await seedCache(userId, balance);
     result = await atomicWalletDeduct(userId, amount);
   }
 
   if (result === -1) {
-    // Redis says insufficient — but a topup may have confirmed between pre-flight
-    // and now without updating Redis. Check PostgreSQL before giving up.
     const pgWallet = await prisma.walletBalance.findFirst({ where: { ownerId: userId } });
     if (pgWallet && pgWallet.balance >= amount) {
-      // PostgreSQL is ahead of Redis — reseed and retry once
       await seedCache(userId, pgWallet.balance);
       result = await atomicWalletDeduct(userId, amount);
     }
@@ -75,11 +74,21 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
     }
   }
 
+  const feeAmount     = computeFee(amount);
+  const netAmount     = amount - feeAmount;
   const balanceBefore = BigInt(result) + amount;
   const balanceAfter  = BigInt(result);
-  const now = new Date().toISOString();
+  const now           = new Date().toISOString();
 
-  await prisma.$transaction([
+  // Pre-fetch org wallet balance for ledger entry (best-effort; increment is atomic)
+  const orgWallet = orgId
+    ? await prisma.walletBalance.findFirst({ where: { ownerId: orgId, ownerType: 'ORGANISATION' } })
+    : null;
+  const orgBalanceBefore = orgWallet?.balance ?? BigInt(0);
+  const orgBalanceAfter  = orgBalanceBefore + netAmount;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ops: any[] = [
     prisma.transaction.create({
       data: {
         id:         uuidv4(),
@@ -93,8 +102,10 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
         ticketId,
         tripId,
         orgId,
+        feeAmount,
       },
     }),
+    // Passenger wallet debit
     prisma.walletBalance.update({
       where: { ownerId_ownerType: { ownerId: userId, ownerType: 'PASSENGER' } },
       data:  { balance: { decrement: amount } },
@@ -111,6 +122,7 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
         description:   `Ticket payment ${paymentRef}`,
       },
     }),
+    // Passenger ImmuDB entry
     prisma.outboxEntry.create({
       data: {
         id:         uuidv4(),
@@ -127,15 +139,95 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
           method:      'wallet',
           status:      'CONFIRMED',
           ticket_id:   ticketId ?? null,
-          trip_id:     tripId ?? null,
-          org_id:      orgId ?? null,
+          trip_id:     tripId  ?? null,
+          org_id:      orgId   ?? null,
           gateway_ref: null,
           occurred_at: now,
-          metadata:    JSON.stringify({ type: 'ticket_payment', ref: paymentRef, ticket_id: ticketId ?? null, trip_id: tripId ?? null, org_id: orgId ?? null }),
+          metadata:    null,
         },
       },
     }),
-  ]);
+    // Platform fee ImmuDB entry
+    prisma.outboxEntry.create({
+      data: {
+        id:         uuidv4(),
+        eventType:  'PLATFORM_FEE',
+        paymentRef,
+        payload: {
+          id:          uuidv4(),
+          event_type:  'PLATFORM_FEE',
+          payment_ref: paymentRef,
+          owner_id:    'katisha-platform',
+          owner_type:  'PLATFORM',
+          amount:      Number(feeAmount),
+          currency,
+          method:      'wallet',
+          status:      'CONFIRMED',
+          ticket_id:   ticketId ?? null,
+          trip_id:     tripId  ?? null,
+          org_id:      orgId   ?? null,
+          gateway_ref: null,
+          occurred_at: now,
+          metadata:    null,
+        },
+      },
+    }),
+  ];
+
+  if (orgId) {
+    ops.push(
+      // Org wallet credit (net after fee)
+      prisma.walletBalance.upsert({
+        where:  { ownerId_ownerType: { ownerId: orgId, ownerType: 'ORGANISATION' } },
+        update: { balance: { increment: netAmount } },
+        create: {
+          id:        uuidv4(),
+          ownerId:   orgId,
+          ownerType: 'ORGANISATION',
+          balance:   netAmount,
+        },
+      }),
+      prisma.walletLedger.create({
+        data: {
+          id:            uuidv4(),
+          ownerId:       orgId,
+          transactionId: paymentRef,
+          type:          'CREDIT',
+          amount:        netAmount,
+          balanceBefore: orgBalanceBefore,
+          balanceAfter:  orgBalanceAfter,
+          description:   `Ticket payment net ${paymentRef}`,
+        },
+      }),
+      // Org ImmuDB entry
+      prisma.outboxEntry.create({
+        data: {
+          id:         uuidv4(),
+          eventType:  'WALLET_CREDIT',
+          paymentRef: `${paymentRef}-org`,
+          payload: {
+            id:          uuidv4(),
+            event_type:  'WALLET_CREDIT',
+            payment_ref: paymentRef,
+            owner_id:    orgId,
+            owner_type:  'ORGANISATION',
+            amount:      Number(netAmount),
+            currency,
+            method:      'wallet',
+            status:      'CONFIRMED',
+            ticket_id:   ticketId ?? null,
+            trip_id:     tripId  ?? null,
+            org_id:      orgId,
+            gateway_ref: null,
+            occurred_at: now,
+            metadata:    null,
+          },
+        },
+      }),
+    );
+  }
+
+  await prisma.$transaction(ops);
 
   publishPaymentConfirmed({
     paymentRef,
@@ -147,6 +239,8 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
     ticketId,
     tripId,
     orgId,
+    feeAmount,
+    netAmount,
   });
 
   publishWalletTransactionCompleted({

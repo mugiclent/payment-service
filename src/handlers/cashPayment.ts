@@ -35,47 +35,21 @@ export async function handleCashPayment(input: CashPaymentInput): Promise<void> 
 
   const now = new Date().toISOString();
 
-  await prisma.$transaction([
-    prisma.transaction.create({
-      data: {
-        id:       uuidv4(),
-        paymentRef,
-        userId,
-        type:     'TICKET_PAYMENT',
-        method:   'cash',
-        amount,
-        currency,
-        status:   'CONFIRMED',
-        orgId,
-        ticketId,
-        tripId,
-      },
-    }),
-    prisma.outboxEntry.create({
-      data: {
-        id:         uuidv4(),
-        eventType:  'CASH_PAYMENT_RECORDED',
-        paymentRef,
-        payload: {
-          id:          uuidv4(),
-          event_type:  'CASH_PAYMENT_RECORDED',
-          payment_ref: paymentRef,
-          owner_id:    orgId,
-          owner_type:  'ORGANISATION',
-          amount:      Number(amount),
-          currency,
-          method:      'cash',
-          status:      'CONFIRMED',
-          ticket_id:   ticketId ?? null,
-          trip_id:     tripId ?? null,
-          org_id:      orgId,
-          gateway_ref: null,
-          occurred_at: now,
-          metadata:    null,
-        },
-      },
-    }),
-  ]);
+  await prisma.transaction.create({
+    data: {
+      id:       uuidv4(),
+      paymentRef,
+      userId,
+      type:     'TICKET_PAYMENT',
+      method:   'cash',
+      amount,
+      currency,
+      status:   'CONFIRMED',
+      orgId,
+      ticketId,
+      tripId,
+    },
+  });
 
   publishPaymentConfirmed({
     paymentRef,
