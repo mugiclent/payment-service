@@ -3,6 +3,7 @@ import { fdiPull } from '../gateway/fdi/client.js';
 import { publishPaymentConfirmed, publishPaymentFailed } from '../rabbitmq/publisher.js';
 import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
+import { assertUuid, assertUuidIfPresent } from '../utils/validate.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface MomoPaymentInput {
@@ -19,6 +20,17 @@ export interface MomoPaymentInput {
 
 export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> {
   const { paymentRef, method, phone, amount, currency, userId, ticketId, tripId, orgId } = input;
+
+  try {
+    assertUuid('paymentRef', paymentRef);
+    assertUuidIfPresent('userId',   userId);
+    assertUuidIfPresent('orgId',    orgId);
+    assertUuidIfPresent('ticketId', ticketId);
+    assertUuidIfPresent('tripId',   tripId);
+  } catch (err) {
+    publishPaymentFailed({ paymentRef, method, amount, userId, phone, ticketId, reason: (err as Error).message, failedAt: new Date().toISOString(), retryable: false });
+    return;
+  }
 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
   if (existing) {

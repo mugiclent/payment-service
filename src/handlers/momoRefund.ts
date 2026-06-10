@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { fdiRefund } from '../gateway/fdi/client.js';
 import { ttlQueue } from '../queues/webhookQueue.js';
+import { assertUuid, assertUuidIfPresent } from '../utils/validate.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface MomoRefundInput {
@@ -17,6 +18,16 @@ export interface MomoRefundInput {
 export async function handleMomoRefund(input: MomoRefundInput): Promise<void> {
   const { paymentRef, originalPaymentRef, phone, userId, amount, currency, ticketId, reason } =
     input;
+
+  try {
+    assertUuid('paymentRef',         paymentRef);
+    assertUuid('originalPaymentRef', originalPaymentRef);
+    assertUuidIfPresent('userId',   userId);
+    assertUuidIfPresent('ticketId', ticketId);
+  } catch (err) {
+    console.warn('[momo-refund] Invalid UUID, dropping message:', (err as Error).message);
+    return;
+  }
 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
   if (existing) return;
@@ -63,6 +74,6 @@ export async function handleMomoRefund(input: MomoRefundInput): Promise<void> {
   await ttlQueue.add(
     'ttl-fallback',
     { paymentRef, provider: 'fdi' },
-    { delay: 180_000, jobId: `ttl-${paymentRef}` },
+    { delay: 50_000, jobId: `ttl-${paymentRef}` },
   );
 }

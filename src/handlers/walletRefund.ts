@@ -2,6 +2,7 @@ import { prisma } from '../db/prisma.js';
 import { seedCache, getBalance } from '../wallet/balance.js';
 import { publishWalletTransactionCompleted } from '../rabbitmq/publisher.js';
 import { computeFee } from '../payments/fee.js';
+import { assertUuid } from '../utils/validate.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletRefundInput {
@@ -16,6 +17,15 @@ export interface WalletRefundInput {
 
 export async function handleWalletRefund(input: WalletRefundInput): Promise<void> {
   const { paymentRef, originalPaymentRef, userId, amount, currency, ticketId, reason } = input;
+
+  try {
+    assertUuid('paymentRef',         paymentRef);
+    assertUuid('originalPaymentRef', originalPaymentRef);
+    assertUuid('userId',             userId);
+  } catch (err) {
+    console.warn('[wallet-refund] Invalid UUID, dropping message:', (err as Error).message);
+    return;
+  }
 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
   if (existing) return;

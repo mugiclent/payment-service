@@ -3,6 +3,7 @@ import { fdiPull } from '../gateway/fdi/client.js';
 import { ttlQueue } from '../queues/webhookQueue.js';
 import { config } from '../config/env.js';
 import { inferMomoMethod, momoChannelId } from '../utils/phone.js';
+import { assertUuid } from '../utils/validate.js';
 import { publishTopupConfirmed, publishTopupFailed } from '../rabbitmq/publisher.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -16,6 +17,16 @@ export interface WalletTopupInput {
 
 export async function handleWalletTopup(input: WalletTopupInput): Promise<void> {
   const { topupId, topupRef, userId, phone, amount } = input;
+
+  // Validate all IDs are proper UUIDs
+  try {
+    assertUuid('topupRef',  topupRef);
+    assertUuid('topupId',   topupId);
+    assertUuid('userId',    userId);
+  } catch (err) {
+    publishTopupFailed({ topupId, topupRef, userId, amount, reason: (err as Error).message, failedAt: new Date().toISOString() });
+    return;
+  }
 
   // Idempotency — re-publish the outcome event so the caller gets the result
   const existing = await prisma.transaction.findUnique({ where: { paymentRef: topupRef } });
@@ -61,6 +72,13 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
   }
 
   const channelId = momoChannelId(method, config.fdi.mtnChannelId, config.fdi.airtelChannelId);
+
+  // Wallet must exist before we can top it up
+  const wallet = await prisma.walletBalance.findFirst({ where: { ownerId: userId, ownerType: 'PASSENGER' } });
+  if (!wallet) {
+    publishTopupFailed({ topupId, topupRef, userId, amount, reason: `Wallet not found for user ${userId}`, failedAt: new Date().toISOString() });
+    return;
+  }
 
   await prisma.transaction.create({
     data: {

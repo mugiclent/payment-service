@@ -1,6 +1,15 @@
 import { prisma } from '../db/prisma.js';
 import { withImmuDB } from './client.js';
+import { v4 as uuidv4 } from 'uuid';
 import Long from 'long';
+
+const MAX_ATTEMPTS = 10;
+
+function isPermanentError(err: Error): boolean {
+  return err.message.includes('max length exceeded') ||
+         err.message.includes('unique constraint') ||
+         err.message.includes('not null constraint');
+}
 
 const POLL_INTERVAL_MS = 2_000;
 const MAX_BACKOFF_MS   = 60_000;
@@ -87,20 +96,40 @@ async function runOnce(): Promise<void> {
         data:  { processedAt: new Date() },
       });
     } catch (err) {
-      const delay = Math.min(5_000 * 2 ** entry.attempts, MAX_BACKOFF_MS);
+      const error = err as Error;
       console.error(
         `[outbox] Failed to write entry ${entry.id} (attempt ${entry.attempts + 1}):`,
-        (err as Error).message,
+        error.message,
       );
-      await prisma.outboxEntry.update({
-        where: { id: entry.id },
-        data: {
-          attempts:      { increment: 1 },
-          lastAttemptAt: new Date(),
-          error:         (err as Error).message.slice(0, 500),
-        },
-      }).catch(() => undefined);
-      await sleep(delay);
+
+      if (isPermanentError(error) || entry.attempts + 1 >= MAX_ATTEMPTS) {
+        // Permanent error or retry cap — fix bad paymentRef with a valid UUID
+        // so the entry can be written to ImmuDB on the next cycle.
+        const fixedRef     = uuidv4();
+        const fixedPayload = { ...(entry.payload as Record<string, unknown>), payment_ref: fixedRef };
+        console.warn(`[outbox] Permanent error for ${entry.id}, repairing paymentRef → ${fixedRef}`);
+        await prisma.outboxEntry.update({
+          where: { id: entry.id },
+          data: {
+            paymentRef:    fixedRef,
+            payload:       fixedPayload,
+            attempts:      { increment: 1 },
+            lastAttemptAt: new Date(),
+            error:         `[REPAIRED] ${error.message.slice(0, 480)}`,
+          },
+        }).catch(() => undefined);
+      } else {
+        const delay = Math.min(5_000 * 2 ** entry.attempts, MAX_BACKOFF_MS);
+        await prisma.outboxEntry.update({
+          where: { id: entry.id },
+          data: {
+            attempts:      { increment: 1 },
+            lastAttemptAt: new Date(),
+            error:         error.message.slice(0, 500),
+          },
+        }).catch(() => undefined);
+        await sleep(delay);
+      }
     }
   }
 }

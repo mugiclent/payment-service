@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { publishPaymentConfirmed, publishPaymentFailed } from '../rabbitmq/publisher.js';
+import { assertUuid, assertUuidIfPresent } from '../utils/validate.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CashPaymentInput {
@@ -14,6 +15,17 @@ export interface CashPaymentInput {
 
 export async function handleCashPayment(input: CashPaymentInput): Promise<void> {
   const { paymentRef, orgId, amount, currency, userId, ticketId, tripId } = input;
+
+  try {
+    assertUuid('paymentRef', paymentRef);
+    assertUuid('orgId',      orgId);
+    assertUuidIfPresent('userId',   userId);
+    assertUuidIfPresent('ticketId', ticketId);
+    assertUuidIfPresent('tripId',   tripId);
+  } catch (err) {
+    publishPaymentFailed({ paymentRef, method: 'cash', amount, userId, ticketId, reason: (err as Error).message, failedAt: new Date().toISOString(), retryable: false });
+    return;
+  }
 
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
   if (existing) {

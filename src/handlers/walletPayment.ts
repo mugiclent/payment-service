@@ -7,6 +7,7 @@ import {
   publishWalletTransactionCompleted,
 } from '../rabbitmq/publisher.js';
 import { computeFee } from '../payments/fee.js';
+import { assertUuid, assertUuidIfPresent } from '../utils/validate.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface WalletPaymentInput {
@@ -21,6 +22,17 @@ export interface WalletPaymentInput {
 
 export async function handleWalletPayment(input: WalletPaymentInput): Promise<void> {
   const { paymentRef, userId, amount, currency, ticketId, tripId, orgId } = input;
+
+  try {
+    assertUuid('paymentRef', paymentRef);
+    assertUuid('userId',     userId);
+    assertUuidIfPresent('orgId',    orgId);
+    assertUuidIfPresent('ticketId', ticketId);
+    assertUuidIfPresent('tripId',   tripId);
+  } catch (err) {
+    publishPaymentFailed({ paymentRef, method: 'wallet', amount, userId, ticketId, reason: (err as Error).message, failedAt: new Date().toISOString(), retryable: false });
+    return;
+  }
 
   // Idempotency check
   const existing = await prisma.transaction.findUnique({ where: { paymentRef } });
