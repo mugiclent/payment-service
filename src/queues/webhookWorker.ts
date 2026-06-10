@@ -331,6 +331,7 @@ export function startWebhookWorker(): Worker {
       }
 
       if (trx.status === 'CONFIRMED' || trx.status === 'REFUNDED') return;
+      if (trx.status === 'FAILED' && status === 'FAILED') return;
 
       const now = new Date().toISOString();
 
