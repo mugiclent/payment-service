@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ${DOCKER_USERNAME}/payment-service:${IMAGE_TAG:-latest}
+    image: ${DOCKER_USERNAME}/payment-svc:${IMAGE_TAG:-latest}
     container_name: payment-svc
     restart: unless-stopped
     networks:

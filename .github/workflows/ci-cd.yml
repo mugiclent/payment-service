@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/payment-service
+  IMAGE_NAME: ${{ secrets.DOCKER_USERNAME }}/payment-svc
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -68,7 +68,7 @@ jobs:
             set -e
             export PATH="$HOME/.local/bin:$PATH"
 
-            DEPLOY_DIR="$HOME/katisha/payment-service"
+            DEPLOY_DIR="$HOME/katisha/payment-svc"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
             if [ -d "$DEPLOY_DIR/.git" ]; then
@@ -114,13 +114,13 @@ jobs:
             docker run --rm \
               --network katisha-net \
               -e DIRECT_DATABASE_URL="$DIRECT_DATABASE_URL" \
-              ${{ secrets.DOCKER_USERNAME }}/payment-service:${{ needs.build-and-push.outputs.image_tag }} \
+              ${{ secrets.DOCKER_USERNAME }}/payment-svc:${{ needs.build-and-push.outputs.image_tag }} \
               sh -c "npx prisma migrate resolve --rolled-back 20260608221306_init 2>/dev/null || true"
 
             docker run --rm \
               --network katisha-net \
               -e DIRECT_DATABASE_URL="$DIRECT_DATABASE_URL" \
-              ${{ secrets.DOCKER_USERNAME }}/payment-service:${{ needs.build-and-push.outputs.image_tag }} \
+              ${{ secrets.DOCKER_USERNAME }}/payment-svc:${{ needs.build-and-push.outputs.image_tag }} \
               npm run db:deploy
 
             infisical run \
