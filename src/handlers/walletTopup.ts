@@ -112,6 +112,6 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
   await ttlQueue.add(
     'ttl-fallback',
     { paymentRef: topupRef, topupId, provider: 'fdi' },
-    { delay: 180_000, jobId: `ttl-${topupRef}` },
+    { delay: 50_000, jobId: `ttl-${topupRef}` },
   );
 }

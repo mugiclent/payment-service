@@ -90,7 +90,7 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
     await ttlQueue.add(
       'ttl-fallback',
       { paymentRef, provider: 'fdi' },
-      { delay: 180_000, jobId: `ttl-${paymentRef}` },
+      { delay: 50_000, jobId: `ttl-${paymentRef}` },
     );
   } catch (err) {
     const error = err as Error;
