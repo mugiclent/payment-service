@@ -46,7 +46,7 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
         userId:    existing.userId,
         phone:     existing.phone,
         ticketId:  existing.ticketId,
-        reason:    'PAYMENT_FAILED',
+        reason:    existing.failureReason ?? 'PAYMENT_FAILED',
         failedAt:  existing.updatedAt.toISOString(),
         retryable: false,
       });
@@ -98,7 +98,7 @@ export async function handleMomoPayment(input: MomoPaymentInput): Promise<void> 
 
     await prisma.transaction.update({
       where: { paymentRef },
-      data:  { status: 'FAILED' },
+      data:  { status: 'FAILED', failureReason: error.message },
     });
 
     publishPaymentFailed({

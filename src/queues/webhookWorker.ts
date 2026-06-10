@@ -359,12 +359,12 @@ export function startWebhookWorker(): Worker {
           now,
         );
       } else {
+        const reason = failureReason ?? 'MOMO_FAILED';
+
         await prisma.transaction.update({
           where: { paymentRef: internalRef },
-          data:  { status: 'FAILED', gatewayRef: gatewayRef ?? null },
+          data:  { status: 'FAILED', gatewayRef: gatewayRef ?? null, failureReason: reason },
         });
-
-        const reason = failureReason ?? 'MOMO_FAILED';
 
         if (trx.type === 'WALLET_TOPUP') {
           publishTopupFailed({

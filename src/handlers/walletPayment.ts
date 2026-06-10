@@ -46,7 +46,7 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
         amount:    existing.amount,
         userId,
         ticketId:  existing.ticketId,
-        reason:    'INSUFFICIENT_BALANCE',
+        reason:    existing.failureReason ?? 'PAYMENT_FAILED',
         failedAt:  existing.updatedAt.toISOString(),
         retryable: false,
       });
@@ -72,6 +72,22 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
     }
 
     if (result === -1) {
+      await prisma.transaction.create({
+        data: {
+          id:            uuidv4(),
+          paymentRef,
+          userId,
+          type:          'TICKET_PAYMENT',
+          method:        'wallet',
+          amount,
+          currency,
+          status:        'FAILED',
+          ticketId,
+          tripId,
+          orgId,
+          failureReason: 'INSUFFICIENT_BALANCE',
+        },
+      });
       publishPaymentFailed({
         paymentRef,
         method:    'wallet',

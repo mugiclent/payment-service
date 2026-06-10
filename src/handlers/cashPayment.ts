@@ -36,7 +36,7 @@ export async function handleCashPayment(input: CashPaymentInput): Promise<void> 
         amount:    existing.amount,
         userId,
         ticketId:  existing.ticketId,
-        reason:    'PAYMENT_FAILED',
+        reason:    existing.failureReason ?? 'PAYMENT_FAILED',
         failedAt:  existing.updatedAt.toISOString(),
         retryable: false,
       });

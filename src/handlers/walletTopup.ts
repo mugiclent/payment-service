@@ -36,7 +36,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
         topupRef,
         userId,
         amount:   existing.amount,
-        reason:   'TOPUP_FAILED',
+        reason:   existing.failureReason ?? 'TOPUP_FAILED',
         failedAt: existing.updatedAt.toISOString(),
       });
     }
@@ -93,16 +93,17 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
       });
     }
   } catch (err) {
+    const reason = (err as Error).message;
     await prisma.transaction.update({
       where: { paymentRef: topupRef },
-      data:  { status: 'FAILED' },
+      data:  { status: 'FAILED', failureReason: reason },
     });
     publishTopupFailed({
       topupId,
       topupRef,
       userId,
       amount,
-      reason:   (err as Error).message,
+      reason,
       failedAt: new Date().toISOString(),
     });
     throw err;
