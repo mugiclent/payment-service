@@ -9,17 +9,12 @@ import { createWallet } from '../wallet/creation.js';
 import { handleWalletTopup } from '../handlers/walletTopup.js';
 
 const TRIPS_DLX = 'payment.dlx';
-const USERS_DLX  = 'users.dlx';
 
 let isShuttingDown        = false;
 let isReconnecting        = false;
 let isReconnectingChannel = false;
 
 const RETRY_DELAY_MS = 3_000;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 function bigintFromMsg(val: unknown): bigint {
   return BigInt(String(val));
