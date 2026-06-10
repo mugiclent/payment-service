@@ -109,14 +109,13 @@ jobs:
             DB_PASSWORD=$(get_secret DB_PASSWORD)
             DIRECT_DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}"
 
-            # First deploy only: baseline the existing schema so migrate deploy
-            # doesn't try to recreate tables that already exist.
-            # Fails harmlessly on subsequent deploys — the || true absorbs it.
+            # Clear any poisoned migration state from the failed baseline attempt.
+            # Safe to run every deploy — no-ops if _prisma_migrations doesn't exist.
             docker run --rm \
               --network katisha-net \
               -e DIRECT_DATABASE_URL="$DIRECT_DATABASE_URL" \
               ${{ secrets.DOCKER_USERNAME }}/payment-service:${{ needs.build-and-push.outputs.image_tag }} \
-              npx prisma migrate resolve --applied 20260608221306_init || true
+              sh -c "npx prisma migrate resolve --rolled-back 20260608221306_init 2>/dev/null || true"
 
             docker run --rm \
               --network katisha-net \
