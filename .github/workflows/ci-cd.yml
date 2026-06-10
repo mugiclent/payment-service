@@ -107,7 +107,16 @@ jobs:
             DB_USER=$(get_secret DB_USER)
             DB_NAME=$(get_secret DB_NAME)
             DB_PASSWORD=$(get_secret DB_PASSWORD)
+            IMMUDB_PASSWORD=$(get_secret IMMUDB_PASSWORD)
+            IMMUDB_DATABASE=$(get_secret IMMUDB_DATABASE)
             DIRECT_DATABASE_URL="postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}"
+
+            # Create the immudb database if it doesn't exist yet.
+            docker exec immudb immuadmin login immudb \
+              --password "$IMMUDB_PASSWORD" \
+              --tokenfile /tmp/immu-deploy.token 2>/dev/null || true
+            docker exec immudb immuadmin database create "$IMMUDB_DATABASE" \
+              --tokenfile /tmp/immu-deploy.token 2>/dev/null || true
 
             # If the Transaction table doesn't exist, the DB is uninitialized.
             # Wipe _prisma_migrations so migrate deploy starts from scratch.
