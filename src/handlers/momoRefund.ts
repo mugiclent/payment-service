@@ -74,6 +74,6 @@ export async function handleMomoRefund(input: MomoRefundInput): Promise<void> {
   await ttlQueue.add(
     'ttl-fallback',
     { paymentRef, provider: 'fdi' },
-    { delay: 50_000, jobId: `ttl-${paymentRef}` },
+    { delay: 90_000, jobId: `ttl-${paymentRef}` },
   );
 }
