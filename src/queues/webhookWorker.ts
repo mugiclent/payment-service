@@ -322,11 +322,11 @@ export function startWebhookWorker(): Worker {
       if (job.name === 'ttl-fallback') return;
 
       const event = job.data as PaymentWebhookEvent;
-      const { internalRef, gatewayRef, status, failureReason } = event;
+      const { paymentRef, gatewayRef, status, failureReason } = event;
 
-      const trx = await prisma.transaction.findUnique({ where: { paymentRef: internalRef } });
+      const trx = await prisma.transaction.findUnique({ where: { paymentRef: paymentRef } });
       if (!trx) {
-        console.warn('[webhook] Unknown paymentRef:', internalRef);
+        console.warn('[webhook] Unknown paymentRef:', paymentRef);
         return;
       }
 
@@ -362,14 +362,14 @@ export function startWebhookWorker(): Worker {
         const reason = failureReason ?? 'MOMO_FAILED';
 
         await prisma.transaction.update({
-          where: { paymentRef: internalRef },
+          where: { paymentRef: paymentRef },
           data:  { status: 'FAILED', gatewayRef: gatewayRef ?? null, failureReason: reason },
         });
 
         if (trx.type === 'WALLET_TOPUP') {
           publishTopupFailed({
-            topupId:   trx.topupId ?? internalRef,
-            topupRef:  internalRef,
+            topupId:   trx.topupId ?? paymentRef,
+            topupRef:  paymentRef,
             userId:    trx.userId!,
             amount:    trx.amount,
             reason,
@@ -377,7 +377,7 @@ export function startWebhookWorker(): Worker {
           });
         } else {
           publishPaymentFailed({
-            paymentRef: internalRef,
+            paymentRef: paymentRef,
             method:     trx.method,
             amount:     trx.amount,
             userId:     trx.userId,

@@ -10,7 +10,7 @@ export function normaliseFdi(body: unknown): PaymentWebhookEvent {
   const b = body as Record<string, unknown>;
   const data = (b['data'] ?? {}) as Record<string, unknown>;
 
-  const internalRef   = (data['trxRef'] ?? b['trxRef'] ?? '') as string;
+  const paymentRef   = (data['trxRef'] ?? b['trxRef'] ?? '') as string;
   const gatewayRef    = (data['gwRef'] ?? data['id']) as string | undefined;
   const failureReason = (data['message'] ?? data['reason']) as string | undefined;
 
@@ -22,7 +22,7 @@ export function normaliseFdi(body: unknown): PaymentWebhookEvent {
   const amount = Math.round(Number(data['amount'] ?? b['amount'] ?? 0));
 
   return {
-    internalRef,
+    paymentRef,
     gatewayRef,
     status,
     failureReason: status === 'FAILED' ? failureReason : undefined,

@@ -31,7 +31,7 @@ export function startTtlWorker(): Worker {
         // fall back to the paymentRef we already know so the webhook worker
         // can always find and update the transaction.
         const event = normaliseFdi(infoRes);
-        if (!event.internalRef) event.internalRef = paymentRef;
+        if (!event.paymentRef) event.paymentRef = paymentRef;
         await webhookQueue.add('payment-event', event);
       } catch (err) {
         console.warn('[ttl-worker] FDI status poll failed for', paymentRef, (err as Error).message);

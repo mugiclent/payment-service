@@ -1,5 +1,5 @@
 export interface PaymentWebhookEvent {
-  internalRef: string;
+  paymentRef: string;
   gatewayRef?: string;
   status: 'SUCCESSFUL' | 'FAILED';
   failureReason?: string;
