@@ -3,3 +3,4 @@ dist/
 .env
 docker-compose.override.yml
 *.js.map
+.github/actions.env
