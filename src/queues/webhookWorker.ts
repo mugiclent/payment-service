@@ -7,7 +7,8 @@ import {
   publishPaymentFailed,
   publishTopupConfirmed,
   publishTopupFailed,
-  publishWalletTransactionCompleted,
+  publishPassengerTransaction,
+  publishOrganisationTransaction,
 } from '../rabbitmq/publisher.js';
 import { computeFee } from '../payments/fee.js';
 import type { PaymentWebhookEvent } from '../gateway/types.js';
@@ -85,12 +86,15 @@ async function handleTopupConfirmation(
     confirmedAt: now,
   });
 
-  publishWalletTransactionCompleted({
+  publishPassengerTransaction({
     userId,
-    newBalance:  balanceAfter,
-    type:        'CREDIT',
+    newBalance: balanceAfter,
+    movement:   'CREDIT',
     amount,
-    occurredAt:  now,
+    occurredAt: now,
+    source:     'topup',
+    reference:  trx.paymentRef,
+    ticketId:   null,
   });
 }
 
@@ -223,6 +227,19 @@ async function handleMomoTicketConfirmation(
     feeAmount,
     netAmount,
   });
+
+  if (orgId) {
+    publishOrganisationTransaction({
+      orgId,
+      newBalance: orgBalanceAfter,
+      movement:   'CREDIT',
+      amount:     netAmount,
+      occurredAt: now,
+      source:     'ticket_payment',
+      reference:  paymentRef,
+      ticketId:   ticketId ?? null,
+    });
+  }
 }
 
 async function handleMomoRefundConfirmation(
@@ -312,6 +329,19 @@ async function handleMomoRefundConfirmation(
   }
 
   await prisma.$transaction(ops);
+
+  if (orgId && orgWallet) {
+    publishOrganisationTransaction({
+      orgId,
+      newBalance: orgBalanceAfter,
+      movement:   'DEBIT',
+      amount:     netAmount,
+      occurredAt: now,
+      source:     'refund',
+      reference:  paymentRef,
+      ticketId:   null,
+    });
+  }
 }
 
 export function startWebhookWorker(): Worker {

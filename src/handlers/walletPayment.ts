@@ -4,7 +4,8 @@ import { seedCache, getBalance } from '../wallet/balance.js';
 import {
   publishPaymentConfirmed,
   publishPaymentFailed,
-  publishWalletTransactionCompleted,
+  publishPassengerTransaction,
+  publishOrganisationTransaction,
 } from '../rabbitmq/publisher.js';
 import { computeFee } from '../payments/fee.js';
 import { assertUuid, assertUuidIfPresent } from '../utils/validate.js';
@@ -283,11 +284,27 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
     netAmount,
   });
 
-  publishWalletTransactionCompleted({
+  publishPassengerTransaction({
     userId,
-    newBalance:  balanceAfter,
-    type:        'DEBIT',
+    newBalance: balanceAfter,
+    movement:   'DEBIT',
     amount,
-    occurredAt:  now,
+    occurredAt: now,
+    source:     'ticket_payment',
+    reference:  paymentRef,
+    ticketId:   ticketId ?? null,
   });
+
+  if (orgId) {
+    publishOrganisationTransaction({
+      orgId,
+      newBalance: orgBalanceAfter,
+      movement:   'CREDIT',
+      amount:     netAmount,
+      occurredAt: now,
+      source:     'ticket_payment',
+      reference:  paymentRef,
+      ticketId:   ticketId ?? null,
+    });
+  }
 }

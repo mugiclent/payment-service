@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { seedCache, getBalance } from '../wallet/balance.js';
-import { publishWalletTransactionCompleted } from '../rabbitmq/publisher.js';
+import { publishPassengerTransaction, publishOrganisationTransaction } from '../rabbitmq/publisher.js';
 import { computeFee } from '../payments/fee.js';
 import { assertUuid } from '../utils/validate.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -159,11 +159,27 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
 
   await seedCache(userId, passengerBalanceAfter);
 
-  publishWalletTransactionCompleted({
+  publishPassengerTransaction({
     userId,
-    newBalance:  passengerBalanceAfter,
-    type:        'CREDIT',
+    newBalance: passengerBalanceAfter,
+    movement:   'CREDIT',
     amount,
-    occurredAt:  now,
+    occurredAt: now,
+    source:     'refund',
+    reference:  paymentRef,
+    ticketId:   ticketId ?? null,
   });
+
+  if (orgId && orgWallet) {
+    publishOrganisationTransaction({
+      orgId,
+      newBalance: orgBalanceAfter,
+      movement:   'DEBIT',
+      amount:     netAmount,
+      occurredAt: now,
+      source:     'refund',
+      reference:  paymentRef,
+      ticketId:   ticketId ?? null,
+    });
+  }
 }

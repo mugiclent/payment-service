@@ -28,8 +28,11 @@ async function setupConsumerChannels(): Promise<void> {
   const conn = getConnection();
 
   // ── trips-payment-svc ────────────────────────────────────────────────────
-  // Consumes payment.requested and refund.requested from the trips exchange.
-  // trips is owned by trip-service (not broker-predefined) so we assertExchange.
+  // trip-service publishes all ticket lifecycle events to the `trips` exchange
+  // under the coarse `ticket.events` routing key, with the specific event in a
+  // `type` field (payment.requested / refund.requested / ticket.confirmed). We
+  // bind that coarse key and dispatch on `type` below. trips is owned by
+  // trip-service (not broker-predefined) so we assertExchange.
   const tripsCh: Channel = await conn.createChannel();
   await tripsCh.prefetch(1);
   await tripsCh.assertExchange('trips', 'topic', { durable: true });
@@ -39,8 +42,13 @@ async function setupConsumerChannels(): Promise<void> {
     durable: true,
     arguments: { 'x-dead-letter-exchange': TRIPS_DLX },
   });
-  await tripsCh.bindQueue('trips-payment-svc', 'trips', 'payment.requested');
-  await tripsCh.bindQueue('trips-payment-svc', 'trips', 'refund.requested');
+  await tripsCh.bindQueue('trips-payment-svc', 'trips', 'ticket.events');
+
+  // Remove the legacy fine-grained bindings — trip-service never published to
+  // these keys. Idempotent: unbinding an absent binding is a no-op.
+  for (const legacy of ['payment.requested', 'refund.requested']) {
+    await tripsCh.unbindQueue('trips-payment-svc', 'trips', legacy);
+  }
 
   tripsCh.on('error', (err: Error) =>
     console.warn('[rabbitmq] tripsCh error:', err.message),
@@ -124,10 +132,9 @@ async function setupConsumerChannels(): Promise<void> {
           });
         }
 
-      } else {
-        // Unknown type on this queue — ack and discard
-        console.warn('[consumer] trips-payment-svc: ignoring unknown type:', type);
       }
+      // Other ticket.events (e.g. ticket.confirmed) are not relevant to
+      // payments — ack and ignore.
 
       try { tripsCh.ack(msg); } catch { /* channel closed */ }
     } catch (err) {

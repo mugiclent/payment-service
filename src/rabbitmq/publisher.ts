@@ -56,16 +56,28 @@ export function publishTopupFailed(data: {
   publish(EXCHANGE, 'topup.failed', data);
 }
 
-/**
- * CQRS projection — User Service consumes this to update its display balance.
- * Only published for PASSENGER wallet operations.
- */
-export function publishWalletTransactionCompleted(data: {
+export function publishPassengerTransaction(data: {
   userId: string;
   newBalance: bigint;
-  type: string;
+  movement: 'DEBIT' | 'CREDIT';
   amount: bigint;
   occurredAt: string;
+  source: 'topup' | 'ticket_payment' | 'refund';
+  reference: string;
+  ticketId?: string | null;
 }): void {
-  publish(EXCHANGE, 'wallet.transaction.completed', data);
+  publish(EXCHANGE, 'wallet.events', { type: 'passenger.transaction', ...data });
+}
+
+export function publishOrganisationTransaction(data: {
+  orgId: string;
+  newBalance: bigint;
+  movement: 'DEBIT' | 'CREDIT';
+  amount: bigint;
+  occurredAt: string;
+  source: 'ticket_payment' | 'refund';
+  reference: string;
+  ticketId?: string | null;
+}): void {
+  publish(EXCHANGE, 'wallet.events', { type: 'organisation.transaction', ...data });
 }
