@@ -148,9 +148,19 @@ async function setupConsumerChannels(): Promise<void> {
     durable: true,
     arguments: { 'x-dead-letter-exchange': 'users.dlx' },
   });
-  await usersCh.bindQueue('users-payment-svc', 'users', 'user.passenger.created');
-  await usersCh.bindQueue('users-payment-svc', 'users', 'org.activated');
-  await usersCh.bindQueue('users-payment-svc', 'users', 'wallet.topup.requested');
+  // user-service publishes domain events to the `users` topic exchange with
+  // coarse per-domain routing keys (user.events / org.events / wallet.events)
+  // and the specific event in a `type` field — same convention trip-service uses.
+  await usersCh.bindQueue('users-payment-svc', 'users', 'user.events');
+  await usersCh.bindQueue('users-payment-svc', 'users', 'org.events');
+  await usersCh.bindQueue('users-payment-svc', 'users', 'wallet.events');
+
+  // Remove the legacy fine-grained bindings from before the routing-key
+  // convention fix — user-service never published to these keys. Idempotent:
+  // unbinding an absent binding is a no-op, so this is safe on every reconnect.
+  for (const legacy of ['user.passenger.created', 'org.activated', 'wallet.topup.requested']) {
+    await usersCh.unbindQueue('users-payment-svc', 'users', legacy);
+  }
 
   usersCh.on('error', (err: Error) =>
     console.warn('[rabbitmq] usersCh error:', err.message),
@@ -171,10 +181,13 @@ async function setupConsumerChannels(): Promise<void> {
       const payload = parse(msg.content) as Record<string, unknown>;
       const type    = payload['type'] as string;
 
-      if (type === 'user.passenger.created') {
-        await createWallet(String(payload['userId']), 'PASSENGER');
+      // A passenger account activating is the trigger to provision its wallet.
+      // user-service emits `user.activated` for both passengers and staff, so
+      // filter on user_type. (There is no dedicated passenger-created event.)
+      if (type === 'user.activated' && payload['user_type'] === 'passenger') {
+        await createWallet(String(payload['id']), 'PASSENGER');
       } else if (type === 'org.activated') {
-        await createWallet(String(payload['orgId']), 'ORGANISATION');
+        await createWallet(String(payload['id']), 'ORGANISATION');
       } else if (type === 'wallet.topup.requested') {
         await handleWalletTopup({
           topupId:   String(payload['topup_id']),
@@ -183,9 +196,9 @@ async function setupConsumerChannels(): Promise<void> {
           phone:     String(payload['phone']),
           amount:    BigInt(String(payload['amount'])),
         });
-      } else {
-        console.warn('[consumer] users-payment-svc: ignoring unknown type:', type);
       }
+      // Other user/org/wallet events (staff.*, user.password_changed, …) are not
+      // relevant to payments — ack and ignore.
 
       try { usersCh.ack(msg); } catch { /* channel closed */ }
     } catch (err) {
