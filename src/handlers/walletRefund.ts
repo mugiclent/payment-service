@@ -163,6 +163,7 @@ export async function handleWalletRefund(input: WalletRefundInput): Promise<void
     userId,
     newBalance: passengerBalanceAfter,
     movement:   'CREDIT',
+    method:     'wallet',
     amount,
     occurredAt: now,
     source:     'refund',

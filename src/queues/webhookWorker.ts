@@ -91,6 +91,7 @@ async function handleTopupConfirmation(
     userId,
     newBalance: balanceAfter,
     movement:   'CREDIT',
+    method:     trx.method,
     amount,
     occurredAt: now,
     source:     'topup',

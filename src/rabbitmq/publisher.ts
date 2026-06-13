@@ -62,6 +62,7 @@ export function publishPassengerTransaction(data: {
   userId: string;
   newBalance: bigint;
   movement: 'DEBIT' | 'CREDIT';
+  method: string;
   amount: bigint;
   occurredAt: string;
   source: 'topup' | 'ticket_payment' | 'refund';

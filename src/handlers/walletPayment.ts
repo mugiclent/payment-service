@@ -288,6 +288,7 @@ export async function handleWalletPayment(input: WalletPaymentInput): Promise<vo
     userId,
     newBalance: balanceAfter,
     movement:   'DEBIT',
+    method:     'wallet',
     amount,
     occurredAt: now,
     source:     'ticket_payment',
