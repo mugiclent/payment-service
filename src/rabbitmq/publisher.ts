@@ -38,6 +38,7 @@ export function publishTopupConfirmed(data: {
   topupId: string;
   topupRef: string;
   userId: string;
+  method: string;
   amount: bigint;
   newBalance: bigint;
   confirmedAt: string;
@@ -49,6 +50,7 @@ export function publishTopupFailed(data: {
   topupId: string;
   topupRef: string;
   userId: string;
+  method?: string;
   amount: bigint;
   reason: string;
   failedAt: string;

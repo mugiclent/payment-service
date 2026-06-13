@@ -15,7 +15,7 @@ import type { PaymentWebhookEvent } from '../gateway/types.js';
 import { v4 as uuidv4 } from 'uuid';
 
 async function handleTopupConfirmation(
-  trx: { id: string; paymentRef: string; topupId: string | null; userId: string | null; amount: bigint; currency: string },
+  trx: { id: string; paymentRef: string; topupId: string | null; userId: string | null; method: string; amount: bigint; currency: string },
   gatewayRef?: string,
 ): Promise<void> {
   const userId = trx.userId!;
@@ -81,6 +81,7 @@ async function handleTopupConfirmation(
     topupId:     trx.topupId ?? trx.paymentRef,
     topupRef:    trx.paymentRef,
     userId,
+    method:      trx.method,
     amount,
     newBalance:  balanceAfter,
     confirmedAt: now,
@@ -368,7 +369,7 @@ export function startWebhookWorker(): Worker {
       if (status === 'SUCCESSFUL') {
         if (trx.type === 'WALLET_TOPUP') {
           await handleTopupConfirmation(
-            { id: trx.id, paymentRef: trx.paymentRef, topupId: trx.topupId, userId: trx.userId, amount: trx.amount, currency: trx.currency },
+            { id: trx.id, paymentRef: trx.paymentRef, topupId: trx.topupId, userId: trx.userId, method: trx.method, amount: trx.amount, currency: trx.currency },
             gatewayRef,
           );
           return;
@@ -402,6 +403,7 @@ export function startWebhookWorker(): Worker {
             topupId:   trx.topupId ?? paymentRef,
             topupRef:  paymentRef,
             userId:    trx.userId!,
+            method:    trx.method,
             amount:    trx.amount,
             reason,
             failedAt:  now,

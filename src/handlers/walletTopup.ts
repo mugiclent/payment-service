@@ -38,6 +38,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
         topupId:     existing.topupId ?? topupRef,
         topupRef,
         userId,
+        method:      existing.method,
         amount:      existing.amount,
         newBalance:  wallet?.balance ?? BigInt(0),
         confirmedAt: existing.updatedAt.toISOString(),
@@ -47,6 +48,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
         topupId:  existing.topupId ?? topupRef,
         topupRef,
         userId,
+        method:   existing.method,
         amount:   existing.amount,
         reason:   existing.failureReason ?? 'TOPUP_FAILED',
         failedAt: existing.updatedAt.toISOString(),
@@ -77,7 +79,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
   // Wallet must exist before we can top it up
   const wallet = await prisma.walletBalance.findFirst({ where: { ownerId: userId, ownerType: 'PASSENGER' } });
   if (!wallet) {
-    publishTopupFailed({ topupId, topupRef, userId, amount, reason: `Wallet not found for user ${userId}`, failedAt: new Date().toISOString() });
+    publishTopupFailed({ topupId, topupRef, userId, method, amount, reason: `Wallet not found for user ${userId}`, failedAt: new Date().toISOString() });
     return;
   }
 
@@ -121,6 +123,7 @@ export async function handleWalletTopup(input: WalletTopupInput): Promise<void> 
       topupId,
       topupRef,
       userId,
+      method,
       amount,
       reason,
       failedAt: new Date().toISOString(),
