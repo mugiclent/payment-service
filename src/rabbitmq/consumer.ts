@@ -31,11 +31,10 @@ async function setupConsumerChannels(): Promise<void> {
   // trip-service publishes all ticket lifecycle events to the `trips` exchange
   // under the coarse `ticket.events` routing key, with the specific event in a
   // `type` field (payment.requested / refund.requested / ticket.confirmed). We
-  // bind that coarse key and dispatch on `type` below. trips is owned by
-  // trip-service (not broker-predefined) so we assertExchange.
+  // bind that coarse key and dispatch on `type` below.
   const tripsCh: Channel = await conn.createChannel();
   await tripsCh.prefetch(1);
-  await tripsCh.assertExchange('trips', 'topic', { durable: true });
+  await tripsCh.checkExchange('trips');
   await tripsCh.checkExchange(TRIPS_DLX);
 
   await tripsCh.assertQueue('trips-payment-svc', {
